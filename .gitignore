@@ -1,3 +1,7 @@
 tmp/
+log
+errors.log
+error.log
+normal.log
 bin/
 notes.md
