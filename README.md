@@ -22,6 +22,16 @@ go run cmd/main.go
 - Ctrl + C → Close the app
 - Tab / Ctrl + Right → Next tab
 - Shift + Tab / Ctrl + Left → Previous tab
+- ESC → Normal mode
+- I → Insert mode
+- Ctrl + N → New Chat
+- Ctrl + E → Edit Chat with default editor (falback to vi)
+- / → Search in chats
+- j/down → scroll down
+- k/up → scroll up
+- g/home → scroll to start
+- G/end → scroll to end
+- ? → Show/Close help
 
 ## Screenshot
 ![vyai](https://raw.githubusercontent.com/vybraan/vyai/refs/heads/master/assets/screenshot.png)
