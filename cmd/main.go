@@ -6,57 +6,36 @@ import (
 	"log"
 	"math/rand/v2"
 	"os"
+	"os/exec"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/providers/gemini"
-	"google.golang.org/api/option"
 )
 
 const gap = "\n"
 
-const SYSTEM_PROMPT = `
-	    You are a Linux System Admin Assistant. Your role is to help users become proficient in Linux and infrastructure management. Provide clear, concise, and direct answers to technical questions. Avoid verbosity and focus on actionable guidance. Assist with:
-	
-	    Linux commands and scripting
-	    System administration tasks
-	    Networking and security best practices
-	    Programming concepts and languages
-	    Troubleshooting and problem-solving
-	
-	If the user greets you, respond with a friendly greeting and share a fun fact about Linux, Unix, or a programming tip. Always prioritize clarity and brevity in your responses.
-	    `
-
 func main() {
-	c := context.Background()
-	client, err := genai.NewClient(c, option.WithAPIKey(os.Getenv("GOOGLE_API_KEY")))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer client.Close()
 
-	model := client.GenerativeModel("gemini-1.5-flash")
-	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(SYSTEM_PROMPT)},
-	}
-	cs := model.StartChat()
+	cm := gemini.NewConversationManager()
 
-	memRepo := gemini.NewMemoryHistoryRepository(cs)
-	gsService := gemini.NewGeminiService(memRepo)
+	gsService := gemini.NewGeminiService(cm)
 
-	p := tea.NewProgram(initialModel(gsService), tea.WithAltScreen(), tea.WithMouseCellMotion())
-
+	p := tea.NewProgram(initialModel(gsService))
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
 
 var (
+	docStyle = lipgloss.NewStyle().Margin(1, 2)
+
 	spinners = []spinner.Spinner{
 		spinner.Line,
 		spinner.Dot,
@@ -66,22 +45,45 @@ var (
 		spinner.Points,
 		spinner.Monkey,
 	}
-
-	textStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render
 	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
-	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render
-	docStyle     = lipgloss.NewStyle().Padding(1, 2, 1, 2)
-	titleStyle   = func() lipgloss.Style {
-		b := lipgloss.RoundedBorder()
-		b.Right = "├"
-		return lipgloss.NewStyle().BorderStyle(b).Padding(0, 1)
-	}()
 
-	infoStyle = func() lipgloss.Style {
-		b := lipgloss.RoundedBorder()
-		b.Left = "┤"
-		return titleStyle.BorderStyle(b)
-	}()
+	// ========================= Status Bar.
+	//General
+	statusBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B27F"}).
+			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
+
+	ModeInsertStyle = lipgloss.NewStyle().
+			Inherit(statusBarStyle).
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color("#c3e88d")).
+			Padding(0, 1)
+	ModeNormalStyle = lipgloss.NewStyle().
+			Inherit(statusBarStyle).
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color("#7aa2f7")).
+			Padding(0, 1)
+
+	BaseNormalStyle = lipgloss.NewStyle().
+			Inherit(statusBarStyle).
+			Foreground(lipgloss.Color("#7aa2f7")).
+			Padding(0, 1)
+
+	BaseInsertStyle = lipgloss.NewStyle().
+			Inherit(statusBarStyle).
+			Foreground(lipgloss.Color("#c3e88d")).
+			Padding(0, 1)
+
+	// Top Status Bar / Navbar
+	tStatusStyle = lipgloss.NewStyle().
+			Inherit(statusBarStyle).
+			Foreground(lipgloss.Color("#FFFDF5")).
+			Background(lipgloss.Color("#ff757f")).
+			Padding(0, 2).
+			MarginRight(1)
+
+	//Bottom Status Bar
+	bModelTextStyle = lipgloss.NewStyle().Inherit(statusBarStyle)
 )
 
 type (
@@ -89,7 +91,16 @@ type (
 	statusMsg string
 )
 
+type State string
+
+const (
+	Normal State = "NORMAL"
+	Insert State = "INSERT"
+)
+
 type model struct {
+	explore      list.Model
+	state        State
 	viewport     viewport.Model
 	messages     []string
 	textarea     textarea.Model
@@ -107,12 +118,14 @@ type model struct {
 func initialModel(gs *gemini.GeminiService) model {
 	ta := textarea.New()
 	ta.Placeholder = "Send a message..."
-	ta.Focus()
+	// ta.Focus()
 
-	ta.Prompt = "┃ "
-	ta.CharLimit = 280
+	// ta.Prompt = "┃ "
+	ta.Prompt = ""
+	ta.CharLimit = 15000
+	ta.ShowLineNumbers = true
 
-	ta.SetWidth(30)
+	// ta.SetWidth(30)
 	ta.SetHeight(3)
 
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
@@ -123,9 +136,9 @@ func initialModel(gs *gemini.GeminiService) model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	tabs := []string{"Chat", "Explore"}
-
+	tabs := []string{"Chat", "Explore", "Settings"}
 	return model{
+		state:       Normal,
 		gsService:   gs,
 		textarea:    ta,
 		messages:    []string{},
@@ -139,7 +152,7 @@ func initialModel(gs *gemini.GeminiService) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(tea.EnterAltScreen, textarea.Blink, m.spinner.Tick)
+	return tea.Batch(tea.EnterAltScreen, tea.EnableMouseAllMotion, tea.EnableMouseCellMotion, textarea.Blink, m.spinner.Tick)
 }
 
 func (m *model) resetSpinner() {
@@ -151,32 +164,109 @@ func (m *model) resetSpinner() {
 
 func (m model) headerView() string {
 
+	// Status bar
+	w := lipgloss.Width
+	statusKey := tStatusStyle.Render("VYAI")
+
+	//---Tabs
 	var renderedTabs []string
-	for _, tab := range m.Tabs {
-		renderedTabs = append(renderedTabs, titleStyle.Render(tab))
+	for i, tab := range m.Tabs {
+		if m.activeTab == i {
+
+			if m.state == Insert {
+				renderedTabs = append(renderedTabs, ModeInsertStyle.Render(tab+" (active)"))
+			} else {
+
+				renderedTabs = append(renderedTabs, ModeNormalStyle.Render(tab+" (active)"))
+			}
+			continue
+		}
+		if m.state == Insert {
+			renderedTabs = append(renderedTabs, BaseInsertStyle.Render(tab))
+		} else {
+			renderedTabs = append(renderedTabs, BaseNormalStyle.Render(tab))
+		}
 	}
+	tabs := lipgloss.JoinHorizontal(lipgloss.Center, renderedTabs...)
 
-	row := lipgloss.JoinHorizontal(lipgloss.Center, m.Tabs...)
+	placeholderWidth := 0
+	for _, tab := range renderedTabs {
+		placeholderWidth += w(tab)
+	}
+	placeholder := statusBarStyle.Width(m.viewport.Width - w(statusKey) - placeholderWidth).Render("")
 
-	line := strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(row)))
-	return lipgloss.JoinHorizontal(lipgloss.Center, renderedTabs[0], renderedTabs[1], line)
+	bar := lipgloss.JoinHorizontal(lipgloss.Top,
+		statusKey,
+		tabs,
+		placeholder,
+	)
+
+	return bar
 }
 
 func (m model) footerView() string {
-	info := infoStyle.Render(fmt.Sprintf("%3.f%%", m.viewport.ScrollPercent()*100))
-	line := strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(info)))
-	return lipgloss.JoinHorizontal(lipgloss.Center, line, info)
-}
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var (
-		tiCmd tea.Cmd
-		vpCmd tea.Cmd
-		cmds  []tea.Cmd
+
+	// Status bar
+	w := lipgloss.Width
+
+	var viewPortPercent, encoding, modelKey, status string
+
+	if m.state == Insert {
+		status = ModeInsertStyle.Render(string(m.state))
+		encoding = BaseInsertStyle.Render("UTF-8")
+		modelKey = BaseInsertStyle.Render("Model")
+
+		viewPortPercent = ModeInsertStyle.Render(fmt.Sprintf("%3.f%%", m.viewport.ScrollPercent()*100))
+	} else {
+		status = ModeNormalStyle.Render(string(m.state))
+		encoding = BaseNormalStyle.Render("UTF-8")
+		modelKey = BaseNormalStyle.Render("Model")
+
+		viewPortPercent = ModeNormalStyle.Render(fmt.Sprintf("%3.f%%", m.viewport.ScrollPercent()*100))
+	}
+
+	modelVal := bModelTextStyle.
+		Width(m.viewport.Width - w(modelKey) - w(status) - w(encoding) - w(viewPortPercent)).
+		Render("gemini-1.5-flash")
+
+	bar := lipgloss.JoinHorizontal(lipgloss.Top,
+		status,
+		modelKey,
+		modelVal,
+		encoding,
+		viewPortPercent,
 	)
 
-	m.textarea, tiCmd = m.textarea.Update(msg)
-	m.viewport, vpCmd = m.viewport.Update(msg)
-	cmds = append(cmds, tiCmd, vpCmd, m.spinner.Tick)
+	return bar
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		tiCmd  tea.Cmd
+		vpCmd  tea.Cmd
+		expCmd tea.Cmd
+		spnCmd tea.Cmd
+		cmds   []tea.Cmd
+	)
+	// Take care of tabs now
+	switch m.activeTab {
+	case 0:
+
+		if m.state == Insert {
+			m.textarea, tiCmd = m.textarea.Update(msg)
+		} else {
+			m.viewport, vpCmd = m.viewport.Update(msg)
+		}
+
+		if !m.loading {
+			spnCmd = m.spinner.Tick
+		}
+	case 1:
+
+		m.explore, expCmd = m.explore.Update(msg)
+	}
+
+	cmds = append(cmds, tiCmd, vpCmd, spnCmd, expCmd)
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -187,58 +277,191 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !m.ready {
 
-			// vp := viewport.New(30, 5)
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
-			m.viewport.SetContent(`Welcome to vyai - cli interface for AI!`)
-			// m.viewport.YPosition = headerHeight
 
+			m.viewport.Style = lipgloss.NewStyle().BorderBottom(true).BorderStyle(lipgloss.RoundedBorder()).BorderBottomForeground(lipgloss.Color("#7aa2f7"))
+			m.viewport.SetContent(`Welcome to vyai - cli interface for AI!`)
+			m.viewport.MouseWheelEnabled = false
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - verticalMarginHeight
 
-			// m.viewport.Height = msg.Height - m.textarea.Height() - lipgloss.Height(gap)
-			// m.viewport.Height = msg.Height - m.textarea.Height() - lipgloss.Height(gap) - verticalMarginHeight
-
 		}
 
 		m.textarea.SetWidth(msg.Width)
 		if len(m.messages) > 0 {
-			// Wrap content before setting it.
+			// Wraping content before setting it.
 			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "")))
 		}
 		m.viewport.GotoBottom()
+
+		// Configs for the second Tabs
+
+		var exp list.Model
+		items, err := m.gsService.GetAllConversations()
+		if err != nil {
+
+			exp = list.New(items, list.NewDefaultDelegate(), 0, 0)
+		} else {
+			exp = list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+		}
+
+		exp.DisableQuitKeybindings()
+		exp.Title = "vyai conversation list"
+		m.explore = exp
+
+		h, v := docStyle.GetFrameSize()
+		m.explore.SetSize(msg.Width-h, msg.Height-v-headerHeight)
+
 	case tea.KeyMsg:
 		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+		case tea.KeyCtrlC:
 			fmt.Println(m.textarea.Value())
 			return m, tea.Quit
-		case tea.KeyTab, tea.KeyCtrlRight:
-			m.activeTab = (m.activeTab + 1) % len(m.Tabs)
+		case tea.KeyTab, tea.KeyCtrlRight, tea.KeyShiftTab, tea.KeyCtrlLeft:
+			m.state = Normal
+			if msg.Type == tea.KeyTab || msg.Type == tea.KeyCtrlRight {
+				m.activeTab = (m.activeTab + 1) % len(m.Tabs)
+			} else if msg.Type == tea.KeyShiftTab || msg.Type == tea.KeyCtrlLeft {
+				m.activeTab = (m.activeTab - 1 + len(m.Tabs)) % len(m.Tabs)
+			}
+
+			if m.activeTab == 1 {
+				items, err := m.gsService.GetAllConversations()
+				if err == nil {
+					m.explore.SetItems(items)
+
+					m.explore.SetShowTitle(true)
+				}
+			}
 			return m, nil
-		case tea.KeyShiftTab, tea.KeyCtrlLeft:
-			m.activeTab = (m.activeTab - 1 + len(m.Tabs)) % len(m.Tabs)
-			return m, nil
+		case tea.KeyCtrlE:
+			if m.activeTab == 0 && m.state == Insert {
+				temp := fmt.Sprintf("vyai-conversation_*.md")
+				// Open the file with $EDITOR and when done editing quiting the editot the contend of the file will be read to the variable and wtritten to the textarea
+				tempFile, err := os.CreateTemp("", temp)
+
+				if err != nil {
+					log.Printf("Error: ", err)
+					return m, nil
+				}
+
+				defer os.Remove(tempFile.Name())
+
+				editor := os.Getenv("EDITOR")
+
+				if editor == "" {
+					editor = "vi"
+				}
+				os.WriteFile(tempFile.Name(), []byte(m.textarea.Value()), 0644)
+
+				cmd := exec.Command(editor, tempFile.Name())
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				cmd.Stdin = os.Stdin
+
+				err = cmd.Run()
+
+				if err != nil {
+					log.Printf("Error opeding the editor: ", err)
+					return m, nil
+				}
+
+				content, err := os.ReadFile(tempFile.Name())
+
+				if err != nil {
+					log.Printf("Error reading the file: ", err)
+					return m, nil
+				}
+
+				m.textarea.SetValue(string(content))
+
+				m.state = Normal
+				return m, nil
+
+			}
+		case tea.KeyCtrlN:
+			if m.activeTab == 0 && m.state == Normal {
+				_, err := m.gsService.NewConversation(context.Background())
+				if err != nil {
+
+					log.Fatal(err)
+					return m, nil
+				}
+
+				m.messages = []string{}
+
+				//clear viewport
+				m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render("New conversation started"))
+				m.viewport.GotoBottom()
+				m.viewport.MouseWheelEnabled = false
+				m.state = Normal
+
+				// Update the conversation list immediately so it doesn't bug when change to explore
+				// Todo:
+				// need check if needs to be in a separate routine because it might block the ui while
+				//is not importand for this take of update
+				items, err := m.gsService.GetAllConversations()
+				if err == nil {
+					m.explore.SetItems(items)
+				} else {
+					log.Printf("Error loading conversations: %v", err)
+				}
+
+				return m, nil
+
+			}
 		case tea.KeyEnter:
 			if m.loading {
 				return m, nil
 			}
 			prompt := m.textarea.Value()
-			m.messages = append(m.messages, m.senderStyle.Render("Me: ")+m.textarea.Value())
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "\n")))
+
+			r, _ := glamour.NewTermRenderer(
+				glamour.WithAutoStyle(),
+				// glamour.WithWordWrap(40), // defaults to 80 - need to expand
+			)
+			out, _ := r.Render(prompt)
+			m.messages = append(m.messages, m.senderStyle.Render("# [*] self:")+out)
+			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "")))
 			m.textarea.Reset()
 			m.viewport.GotoBottom()
 
 			m.loading = true
 			return m, sendMessageCmd(m, prompt)
+		default:
+			switch msg.String() {
+			case "i":
+
+				m.state = Insert
+				m.textarea.Focus()
+
+				m.viewport.MouseWheelEnabled = false
+
+				cmds = append(cmds, textarea.Blink)
+			case "esc":
+
+				m.viewport.MouseWheelEnabled = false
+				m.state = Normal
+				m.textarea.Blur()
+			}
+			if m.state == Insert {
+
+				m.viewport.Style = lipgloss.NewStyle().BorderBottom(true).BorderStyle(lipgloss.RoundedBorder()).BorderBottomForeground(lipgloss.Color("#c3e88d"))
+			} else {
+
+				m.viewport.Style = lipgloss.NewStyle().BorderBottom(true).BorderStyle(lipgloss.RoundedBorder()).BorderBottomForeground(lipgloss.Color("#7aa2f7"))
+			}
+
 		}
 
 	case statusMsg:
-		m.messages = append(m.messages, m.senderStyle.Render("")+string(msg))
+		m.messages = append(m.messages, string(msg))
 		m.loading = false
 		m.spinnerIndex = rand.IntN(len(spinners)-1-0) + 0
 		m.resetSpinner()
-		m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "\n")))
+		m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "")))
 		m.viewport.GotoBottom()
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -256,39 +479,63 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// tea.Cmd to receive the modells message without blocking UI
 func sendMessageCmd(m model, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		message, err := m.gsService.SendMessage(context.Background(), prompt)
-		if err != nil {
-			return statusMsg("System: There was an error processing your message")
+		respChan := make(chan string)
+		errChan := make(chan error)
+
+		// send message
+		go func() {
+			message, err := m.gsService.SendMessage(context.Background(), prompt)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			respChan <- message
+		}()
+
+		select {
+		case message := <-respChan:
+			out, _ := glamour.NewTermRenderer(glamour.WithAutoStyle())
+			renderedMessage, _ := out.Render(strings.TrimSpace(message))
+			return statusMsg(m.senderStyle.Render("# [*] vyai: ") + renderedMessage)
+		case err := <-errChan:
+			out, _ := glamour.NewTermRenderer(glamour.WithAutoStyle())
+			renderedError, _ := out.Render("# [*] System\n## Error\n * " + err.Error())
+			return statusMsg(renderedError)
 		}
-		return statusMsg(m.senderStyle.Render("vyai: ") + strings.TrimSpace(message))
 	}
 }
+
 func (m model) View() string {
 	if !m.ready {
 		return "\n  Initializing..."
 	}
 
-	if m.activeTab == 0 {
+	//Tabirization
+	switch m.activeTab {
+	case 0:
 		if m.loading {
 			// Testing to show spinner when waiting for the models response
+			loadGap := "\n\n"
 			return fmt.Sprintf(
 				"%s\n%s%s%s\n%s", m.headerView(),
 				m.viewport.View(),
-				gap, m.footerView(),
-				m.spinner.View()+" Thinking...",
+				loadGap,
+				m.spinner.View()+" Thinking...\n", m.footerView(),
 			)
 		}
 
 		return fmt.Sprintf(
 			"%s\n%s%s%s\n%s", m.headerView(),
 			m.viewport.View(),
-			gap, m.footerView(),
-			m.textarea.View(),
+			gap,
+			m.textarea.View(), m.footerView(),
 		)
-	} else {
-		return fmt.Sprintf("%s%s", m.headerView(), "Screw it ailton")
+	case 1:
+		return fmt.Sprintf("%s\n%s", m.headerView(), docStyle.Render(m.explore.View()))
+	default:
+		return fmt.Sprintf("%s\n%s", m.headerView(), "Screwed up ailton \n * "+m.Tabs[m.activeTab]+" Page under development")
+
 	}
 }

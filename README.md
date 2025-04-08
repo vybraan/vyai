@@ -32,6 +32,10 @@ go run cmd/main.go
 - g/home → scroll to start
 - G/end → scroll to end
 - ? → Show/Close help
-
+  screenshot-convlist.png  screenshot.png
+screenshot-conv2.png  screenshot-conv.png
 ## Screenshot
-![vyai](https://raw.githubusercontent.com/vybraan/vyai/refs/heads/master/assets/screenshot.png)
+![vyai](https://raw.githubusercontent.com/vybraan/vyai/refs/heads/master/assets/screenshot-conv.png)
+![vyai](https://raw.githubusercontent.com/vybraan/vyai/refs/heads/master/assets/screenshot-conv1.png)
+![vyai](https://raw.githubusercontent.com/vybraan/vyai/refs/heads/master/assets/screenshot-conv2.png)
+![vyai](https://raw.githubusercontent.com/vybraan/vyai/refs/heads/master/assets/screenshot-convlist.png)
