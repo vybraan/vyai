@@ -10,7 +10,6 @@ import (
 )
 
 type HistoryRepository interface {
-	StoreMessage(chat *genai.Content) error
 	SendMessage(c context.Context, text genai.Text) (string, error)
 }
 
@@ -43,12 +42,4 @@ func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Te
 	finalResponse := response.String()
 	return finalResponse, nil
 
-}
-
-func (mhr *MemoryHistoryRepository) StoreMessage(chat *genai.Content) error {
-
-	mhr.cs.History = append(mhr.cs.History, chat)
-	//this is just a mockup anyways
-	// for instance i hope it will return some kind of errors
-	return nil
 }
