@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -260,7 +261,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		headerHeight := lipgloss.Height(m.headerView())
 		footerHeight := lipgloss.Height(m.footerView())
-		textareaHeight := lipgloss.Height(string(m.textarea.Height())) // temoprary, probably should find a better way of doing this
+		textareaHeight := lipgloss.Height(strconv.Itoa(m.textarea.Height()))
 		verticalMarginHeight := headerHeight + footerHeight + textareaHeight + textareaHeight + textareaHeight
 
 		if !m.ready {
