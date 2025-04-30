@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: go mod tidy
-      - run: go build
+      - run: go build cmd/main.go
       - run: go test -v ./...
         continue-on-error: true
         # temporarily continue even if unit tests fail
