@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: go mod tidy
-      - run: go build cmd/main.go
+      - run: go build ./cmd/main.go
       - run: go test -v ./...
         continue-on-error: true
         # temporarily continue even if unit tests fail
@@ -72,5 +72,6 @@ jobs:
           distribution: goreleaser
           version: latest
           args: release --clean
+          workdir: cmd
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
