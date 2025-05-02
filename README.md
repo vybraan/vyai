@@ -35,6 +35,14 @@ or
 go run cmd/main.go
 ```
 
+### Distro specific packages
+
+While not a comprehensive list, [repology](https://repology.org/project/vyai/versions) provides a decent list of distro
+specific packages.
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/vyai.svg)](https://repology.org/project/vyai/versions)
+
+
 ## Keyboard Shortcuts
 - Enter → Send message
 - Ctrl + C → Close the app
