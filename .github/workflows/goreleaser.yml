@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - '*'
-# on:
-#   push:
-#   pull_request:
-#     types:
-#       - opened
-#       - edited
 
 permissions:
   contents: write
@@ -25,22 +19,16 @@ jobs:
         continue-on-error: true
         # temporarily continue even if unit tests fail
 
-  create_tag:
+  create_release:
     runs-on: ubuntu-latest
     needs: check_build
     if: github.ref == 'refs/heads/master'
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
     steps:
-      # - uses: actions/checkout@v3
-      # - name: Bump release version and push tag
-      #   id: release
-      #   uses: anothrNick/github-tag-action@1.64.0
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     WITH_V: true
-      #     PRERELEASE: false
-
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - name: get the latest tag
         id: tag
         run: |
@@ -58,7 +46,7 @@ jobs:
           prerelease: false
 
   goreleaser:
-    needs: create_tag
+    needs: create_release
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     steps:
