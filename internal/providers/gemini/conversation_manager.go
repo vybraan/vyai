@@ -21,23 +21,23 @@ func (cm *ConversationManager) StartNewConversation(repo HistoryRepository) *Con
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	convo := NewConversation(repo)
-	cm.conversations[convo.ID] = convo
+	conversation := NewConversation(repo)
+	cm.conversations[conversation.ID] = conversation
 
-	cm.active = convo
-	return convo
+	cm.active = conversation
+	return conversation
 }
 
 func (cm *ConversationManager) SwitchConversation(id string) error {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	convo, exists := cm.conversations[id]
+	conversation, exists := cm.conversations[id]
 	if !exists {
 		return fmt.Errorf("conversation with ID %s does not exist", id)
 	}
 
-	cm.active = convo
+	cm.active = conversation
 	return nil
 }
 
@@ -55,9 +55,9 @@ func (cm *ConversationManager) GetConversationDescription(id string) (string, er
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	convo, exists := cm.conversations[id]
+	conversation, exists := cm.conversations[id]
 	if !exists {
 		return "", fmt.Errorf("no description found for conversation %s", id)
 	}
-	return convo.Description, nil
+	return conversation.Description, nil
 }

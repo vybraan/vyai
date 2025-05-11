@@ -11,6 +11,7 @@ import (
 
 type HistoryRepository interface {
 	SendMessage(c context.Context, text genai.Text) (string, error)
+	GetMessages() ([]string, error)
 }
 
 type MemoryHistoryRepository struct {
@@ -21,6 +22,27 @@ func NewMemoryHistoryRepository(cs *genai.ChatSession) *MemoryHistoryRepository 
 	return &MemoryHistoryRepository{
 		cs: cs,
 	}
+}
+
+func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
+
+	if mhr.cs == nil {
+		return nil, errors.New("chat session is not initialized")
+	}
+	if len(mhr.cs.History) == 0 {
+		return nil, errors.New("no messages in history")
+	}
+
+	var messages []string
+	for _, content := range mhr.cs.History {
+		for _, part := range content.Parts {
+			if text, ok := part.(genai.Text); ok {
+				messages = append(messages, fmt.Sprintf("[Role:%s, Part:%s]", content.Role, text))
+			}
+		}
+	}
+	return messages, nil
+
 }
 
 func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Text) (string, error) {

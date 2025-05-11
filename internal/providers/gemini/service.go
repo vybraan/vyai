@@ -4,26 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/utils"
 )
-
-type item struct {
-	title string
-	desc  string
-}
-
-func NewItem(title, description string) *item {
-	return &item{
-		title: title,
-		desc:  description,
-	}
-}
-
-func (i item) Title() string       { return i.title }
-func (i item) Description() string { return i.desc }
-func (i item) FilterValue() string { return i.desc }
 
 type GeminiService struct {
 	cm *ConversationManager
@@ -42,7 +25,7 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 	// this is a workaround for the fact that the  does not have a Description
 	// field in the conversation when newly created so when create a new one before
 	// it happens give it description
-	if gs.cm.active != nil && gs.cm.active.DescriptionLocked != true {
+	if gs.cm.active != nil && !gs.cm.active.DescriptionLocked {
 		desc, err := gs.SendEphemeralMessage(c, utils.DESCRIPTION_PROMPT)
 		if err != nil {
 			return err
@@ -54,9 +37,20 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 
 }
 
+func (gs *GeminiService) ClearConversation(c context.Context) error {
+	_, err := gs.cm.GetActiveConversation()
+	if err != nil {
+		return err
+	}
+
+	gs.cm.active = nil
+
+	return nil
+}
+
 func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, error) {
 
-	// Ensure the conversation has a description before the switch
+	// Ensure the old conversation has a description before the switch
 	if err := gs.SetConversationDescription(c, true); err != nil {
 		return nil, err
 	}
@@ -66,28 +60,28 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 		return nil, err
 	}
 	memRepo := NewMemoryHistoryRepository(cs)
-	convo := gs.cm.StartNewConversation(memRepo)
-	return convo, nil
+	conversation := gs.cm.StartNewConversation(memRepo)
+	return conversation, nil
 }
 
 func (gs *GeminiService) SendMessage(c context.Context, message string) (string, error) {
 
-	convo, err := gs.cm.GetActiveConversation()
+	conversation, err := gs.cm.GetActiveConversation()
 	if err != nil {
-		convo, err = gs.NewConversation(c)
+		conversation, err = gs.NewConversation(c)
 		if err != nil {
 			return "", err
 		}
 	}
 
-	result, err := convo.Repo.SendMessage(c, genai.Text(message))
+	result, err := conversation.Repo.SendMessage(c, genai.Text(message))
 
 	if err != nil {
 		return "", err
 	}
 
 	//Set the first time description and set it to still be able to be updated later
-	if convo.Description == "" {
+	if conversation.Description == "" {
 		gs.SetConversationDescription(c, false)
 	}
 
@@ -96,14 +90,14 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 
 func (gs *GeminiService) SendEphemeralMessage(c context.Context, message string) (string, error) {
 
-	convo, err := gs.cm.GetActiveConversation()
+	conversation, err := gs.cm.GetActiveConversation()
 	if err != nil {
 
-		convo, err = gs.NewConversation(c)
+		_, err = gs.NewConversation(c)
 		return "", err
 	}
 
-	result, err := convo.Repo.SendMessage(c, genai.Text(message))
+	result, err := conversation.Repo.SendMessage(c, genai.Text(message))
 
 	if err != nil {
 		return "", err
@@ -111,15 +105,12 @@ func (gs *GeminiService) SendEphemeralMessage(c context.Context, message string)
 	return result, nil
 }
 
-func (gs *GeminiService) GetAllConversations() ([]list.Item, error) {
-	var items []list.Item
+func (gs *GeminiService) GetAllConversations() ([]utils.Item, error) {
+	var items []utils.Item
 
 	for _, conv := range gs.cm.conversations {
-		convoItem := item{
-			title: conv.ID,
-			desc:  conv.Description,
-		}
-		items = append(items, convoItem)
+		conversationItem := utils.NewItem(conv.ID, conv.Description)
+		items = append(items, conversationItem)
 	}
 
 	if len(items) == 0 {
@@ -127,4 +118,31 @@ func (gs *GeminiService) GetAllConversations() ([]list.Item, error) {
 	}
 
 	return items, nil
+}
+
+func (gs *GeminiService) SwitchConversation(c context.Context, id string) error {
+
+	// Ensure the old conversation has a description before the switch
+	if err := gs.SetConversationDescription(c, true); err != nil {
+		return err
+	}
+
+	err := gs.cm.SwitchConversation(id)
+	if err != nil {
+		return err
+	}
+
+	// if gs.cm.active != nil {
+	// 	gs.cm.active.DescriptionLocked = true
+	// }
+
+	return nil
+}
+
+func (gs *GeminiService) GetActiveConversation() (*Conversation, error) {
+	conversation, err := gs.cm.GetActiveConversation()
+	if err != nil {
+		return nil, err
+	}
+	return conversation, nil
 }
