@@ -28,6 +28,14 @@ func (c *Conversation) SetDescription(description string) {
 	c.Description = description
 }
 
+// func (c *Conversation) GetConversationMessages() ([]string, error) {
+// 	messages, err := c.Repo.GetMessages()
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return messages, nil
+// }
+
 func GenerateRandomConversationID() string {
 	// return fmt.Sprintf("CONVERSATION-%d", time.Now().UnixNano())
 	// rand.S(time.Now().UnixNano())
