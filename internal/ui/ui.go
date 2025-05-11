@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vybraan/vyai/internal/providers/gemini"
+	"github.com/vybraan/vyai/internal/utils"
 )
 
 const gap = "\n"
@@ -291,7 +293,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		items, err := m.gsService.GetAllConversations()
 		if err != nil {
 
-			exp = list.New(items, list.NewDefaultDelegate(), 0, 0)
+			exp = list.New(utils.ConvertToItemList(items), list.NewDefaultDelegate(), 0, 0)
 		} else {
 			exp = list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 		}
@@ -319,7 +321,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 1 {
 				items, err := m.gsService.GetAllConversations()
 				if err == nil {
-					m.explore.SetItems(items)
+
+					m.explore.SetItems(utils.ConvertToItemList(items))
 
 					m.explore.SetShowTitle(true)
 				}
@@ -327,52 +330,66 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyCtrlE:
 			if m.activeTab == 0 && m.state == Insert {
-				temp := fmt.Sprintf("vyai-conversation_*.md")
+				temp := "vyai-conversation_*.md"
 				// Open the file with $EDITOR and when done editing quiting the editot the contend of the file will be read to the variable and wtritten to the textarea
 				tempFile, err := os.CreateTemp("", temp)
-
 				if err != nil {
-					log.Printf("Error: %s", err)
+					log.Printf("Error creating temp file: %s", err)
+					return m, nil
+				}
+				defer os.Remove(tempFile.Name())
+
+				err = os.WriteFile(tempFile.Name(), []byte(m.textarea.Value()), 0644)
+				if err != nil {
+					log.Printf("Error writing to temp file: %s", err)
 					return m, nil
 				}
 
-				defer os.Remove(tempFile.Name())
-
 				editor := os.Getenv("EDITOR")
 
-				if editor == "" {
-					editor = "vi"
+				var cmd *exec.Cmd
+				if editor != "" {
+					cmd = exec.Command(editor, tempFile.Name())
+				} else {
+					if runtime.GOOS == "windows" {
+						// Not supported yet
+						// cmd = exec.Command("write", tempFile.Name())
+						return m, nil
+					} else {
+						cmd = exec.Command("vi", tempFile.Name())
+					}
 				}
-				os.WriteFile(tempFile.Name(), []byte(m.textarea.Value()), 0644)
 
-				cmd := exec.Command(editor, tempFile.Name())
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				cmd.Stdin = os.Stdin
 
 				err = cmd.Run()
-
 				if err != nil {
 					log.Printf("Error opeding the editor: %s", err)
 					return m, nil
 				}
 
 				content, err := os.ReadFile(tempFile.Name())
-
 				if err != nil {
 					log.Printf("Error reading the file: %s", err)
 					return m, nil
 				}
 
 				m.textarea.SetValue(string(content))
-
 				m.state = Normal
 				return m, nil
 
 			}
 		case tea.KeyCtrlN:
 			if m.activeTab == 0 && m.state == Normal {
-				_, err := m.gsService.NewConversation(context.Background())
+
+				_, err := m.gsService.GetActiveConversation()
+				if err != nil {
+					return m, nil
+				}
+
+				err = m.gsService.ClearConversation(context.Background())
 				if err != nil {
 
 					log.Fatal(err)
@@ -393,7 +410,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				//is not importand for this take of update
 				items, err := m.gsService.GetAllConversations()
 				if err == nil {
-					m.explore.SetItems(items)
+
+					m.explore.SetItems(utils.ConvertToItemList(items))
 				} else {
 					log.Printf("Error loading conversations: %v", err)
 				}
@@ -405,35 +423,90 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.loading {
 				return m, nil
 			}
-			prompt := m.textarea.Value()
 
-			r, _ := glamour.NewTermRenderer(
-				glamour.WithAutoStyle(),
-				// glamour.WithWordWrap(40), // defaults to 80 - need to expand
-			)
-			out, _ := r.Render(prompt)
-			m.messages = append(m.messages, m.senderStyle.Render("# [*] self:")+out)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "")))
-			m.textarea.Reset()
-			m.viewport.GotoBottom()
+			switch m.activeTab {
+			case 0:
+				if m.state == Insert {
 
-			m.loading = true
-			return m, sendMessageCmd(m, prompt)
+					prompt := m.textarea.Value()
+
+					r, _ := glamour.NewTermRenderer(
+						glamour.WithAutoStyle(),
+						// glamour.WithWordWrap(40), // defaults to 80 - need to expand
+					)
+					out, _ := r.Render(prompt)
+					m.messages = append(m.messages, m.senderStyle.Render("# [*] self:")+out)
+					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "")))
+					m.textarea.Reset()
+					m.viewport.GotoBottom()
+
+					m.loading = true
+					return m, sendMessageCmd(m, prompt)
+				}
+			case 1:
+				i, ok := m.explore.SelectedItem().(utils.Item)
+				if !ok {
+					return m, tea.Quit
+				}
+
+				m.gsService.SwitchConversation(context.Background(), i.Title())
+				m.messages = []string{}
+
+				conversation, _ := m.gsService.GetActiveConversation()
+
+				messages, err := conversation.Repo.GetMessages()
+
+				if err != nil {
+					// No messages in the conversation
+					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render("chat is empty"))
+					m.viewport.GotoBottom()
+					m.viewport.MouseWheelEnabled = false
+
+					m.activeTab = 0
+					m.state = Normal
+					return m, nil
+				}
+
+				for _, message := range messages {
+					out, _ := glamour.NewTermRenderer(glamour.WithAutoStyle())
+					renderedMessage, _ := out.Render(strings.TrimSpace(message))
+					m.messages = append(m.messages, m.senderStyle.Render("# [*] vyai: ")+i.Description()+renderedMessage)
+				}
+				m.viewport.SetContent(
+					lipgloss.NewStyle().Width(m.viewport.Width).
+						Render(strings.Join(m.messages, "")))
+
+				m.activeTab = 0
+				m.viewport.GotoBottom()
+				m.viewport.MouseWheelEnabled = false
+				m.state = Normal
+				m.textarea.Reset()
+
+				return m, nil
+			}
+
 		default:
 			switch msg.String() {
 			case "i":
+				switch m.activeTab {
+				case 0:
+					m.state = Insert
+					m.textarea.Focus()
 
-				m.state = Insert
-				m.textarea.Focus()
+					m.viewport.MouseWheelEnabled = false
 
-				m.viewport.MouseWheelEnabled = false
+					cmds = append(cmds, textarea.Blink)
 
-				cmds = append(cmds, textarea.Blink)
+				}
+
 			case "esc":
 
-				m.viewport.MouseWheelEnabled = false
-				m.state = Normal
-				m.textarea.Blur()
+				switch m.activeTab {
+				case 0:
+					m.viewport.MouseWheelEnabled = false
+					m.state = Normal
+					m.textarea.Blur()
+				}
 			}
 			if m.state == Insert {
 
