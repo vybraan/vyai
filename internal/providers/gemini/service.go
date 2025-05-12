@@ -55,7 +55,7 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 		return nil, err
 	}
 
-	cs, err := NewChatSession(c, "gemini-1.5-flash")
+	cs, err := NewChatSession(c, "gemini-2.0-flash")
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (gs *GeminiService) GetAllConversations() ([]utils.Item, error) {
 
 func (gs *GeminiService) SwitchConversation(c context.Context, id string) error {
 
-	// Ensure the old conversation has a description before the switch
+	// Ensure the old conversation has a description before the switch and then lock it
 	if err := gs.SetConversationDescription(c, true); err != nil {
 		return err
 	}
