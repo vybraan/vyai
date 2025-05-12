@@ -14,7 +14,7 @@ func main() {
 
 	gsService := gemini.NewGeminiService(cm)
 
-	p := tea.NewProgram(ui.InitialModel(gsService))
+	p := tea.NewProgram(ui.NewUIModel(gsService))
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
