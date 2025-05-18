@@ -58,7 +58,5 @@ specific packages.
 - g/home → scroll to start
 - G/end → scroll to end
 - ? → Show/Close help
-  screenshot-convlist.png  screenshot.png
-screenshot-conv2.png  screenshot-conv.png
 ## Demo
 ![vyai](https://raw.githubusercontent.com/vybraan/vyai/refs/heads/master/assets/vyai-demo.gif)
