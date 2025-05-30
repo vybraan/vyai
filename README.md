@@ -22,6 +22,14 @@ git clone https://aur.archlinux.org/vyai.git
 cd vyai
 makepkg -si
 ```
+### Windows
+On Windows you can install it using scoop
+```pwsh
+# First add the bucket 
+scoop bucket add vybraan https://github.com/vybraan/bucket
+#Then Install it
+scoop install vyai
+```
 
 ### Manually / From Source
 1. Clone the repository:
