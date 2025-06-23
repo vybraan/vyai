@@ -6,3 +6,5 @@ normal.log
 bin/
 notes.md
 test.md
+# Added by goreleaser init:
+dist/
