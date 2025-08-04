@@ -33,6 +33,8 @@ var (
 )
 
 type UIModel struct {
+	width        int
+	height       int
 	theme        Theme
 	explore      list.Model
 	state        State
