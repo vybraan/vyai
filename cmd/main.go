@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 	"github.com/vybraan/vyai/internal/ui"
 )

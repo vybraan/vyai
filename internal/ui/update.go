@@ -5,12 +5,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/list"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textarea"
+	"github.com/charmbracelet/bubbles/v2/viewport"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 	"github.com/vybraan/vyai/internal/utils"
 )
@@ -21,20 +21,26 @@ func NewUIModel(gs *gemini.GeminiService) UIModel {
 	theme := NewDefaultTheme()
 
 	ta := textarea.New()
-	ta.Placeholder = "Send a message..."
-	// ta.Focus()
 
-	// ta.Prompt = "┃ "
-	ta.Prompt = ""
-	ta.CharLimit = 15000
-	ta.ShowLineNumbers = true
+	ta.Styles = theme.Styles.TextArea //SetStyles(theme.TextArea)
+	ta.SetPromptFunc(4, func(lineindex int) string {
+		if lineindex == 0 {
+			return "  > "
+		}
+		// if info.Focused {
+		return theme.Styles.Base.Foreground(lipgloss.Color("#12C78F")).Render("::: ")
+		// } else {
+		// 	return theme.Styles.Muted.Render("::: ")
+		// }
+	})
 
-	// ta.SetWidth(30)
 	ta.SetHeight(3)
-
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.ShowLineNumbers = false
-	ta.KeyMap.InsertNewline.SetEnabled(false)
+	ta.CharLimit = -1
+	ta.VirtualCursor = false
+	ta.Focus()
+
+	ta.Placeholder = "Ask Anything..."
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -88,6 +94,8 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		headerHeight := lipgloss.Height(m.headerView())
 		footerHeight := lipgloss.Height(m.footerView())
 		textareaHeight := lipgloss.Height(strconv.Itoa(m.textarea.Height()))
@@ -96,22 +104,22 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !m.ready {
 
-			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+			m.viewport = viewport.New(viewport.WithWidth(msg.Width), viewport.WithHeight(msg.Height-verticalMarginHeight))
 
-			m.viewport.Style = lipgloss.NewStyle().BorderBottom(true).BorderStyle(lipgloss.RoundedBorder()).BorderBottomForeground(lipgloss.Color("#7aa2f7"))
+			m.viewport.Style = m.theme.ViewportStyleNormal
 			m.viewport.SetContent(`Welcome to vyai - cli interface for AI!`)
 			m.viewport.MouseWheelEnabled = false
 			m.ready = true
 		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - verticalMarginHeight
+			m.viewport.SetWidth(msg.Width)
+			m.viewport.SetHeight(msg.Height - verticalMarginHeight)
 
 		}
 
 		m.textarea.SetWidth(msg.Width)
 		if len(m.messages) > 0 {
 			// Wraping content before setting it.
-			m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width).Render(strings.Join(m.messages, "")))
+			m.renderViewport(strings.Join(m.messages, ""))
 		}
 		m.viewport.GotoBottom()
 
@@ -126,17 +134,17 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.explore.SetSize(msg.Width-h, msg.Height-v-headerHeight)
 
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC:
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
-		case tea.KeyTab, tea.KeyCtrlRight, tea.KeyShiftTab, tea.KeyCtrlLeft:
+		case "tab", "ctrl+right", "shift+tab", "ctrl+left":
 			m.state = Normal
 			m.updateViewportStyle()
 
-			if msg.Type == tea.KeyTab || msg.Type == tea.KeyCtrlRight {
+			if msg.String() == "tab" || msg.String() == "ctrl+right" {
 				m.activeTab = (m.activeTab + 1) % len(m.Tabs)
 
-			} else if msg.Type == tea.KeyShiftTab || msg.Type == tea.KeyCtrlLeft {
+			} else if msg.String() == "shift+tab" || msg.String() == "ctrl+left" {
 				m.activeTab = (m.activeTab - 1 + len(m.Tabs)) % len(m.Tabs)
 			}
 
@@ -144,19 +152,19 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refreshExploreList()
 			}
 			return m, nil
-		case tea.KeyCtrlE:
+		case "ctrl+e":
 			if m.activeTab != 0 || m.state != Insert {
 				return m, nil
 			}
 			m, cmd := m.openEditorForTextarea()
 			return m, cmd
-		case tea.KeyCtrlN:
+		case "ctrl+n":
 			if m.activeTab != 0 || m.state != Normal {
 				return m, nil
 			}
 			m, cmd := m.NewConversation()
 			return m, cmd
-		case tea.KeyEnter:
+		case "enter":
 			if m.loading {
 				return m, nil
 			}
@@ -194,7 +202,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.spinnerIndex = rand.IntN(len(spinners)-1-0) + 0
 		m.resetSpinner()
-		m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width).Render(strings.Join(m.messages, "")))
+		m.renderViewport(strings.Join(m.messages, "\n"))
 		m.viewport.GotoBottom()
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -205,7 +213,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.spinnerIndex = rand.IntN(len(spinners) - 1)
 		m.resetSpinner()
-		m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width).Render(strings.Join(m.messages, "\n")))
+		m.renderViewport(strings.Join(m.messages, ""))
 		m.viewport.GotoBottom()
 		return m, nil
 	}

@@ -3,9 +3,8 @@ package ui
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/v2"
 )
-
 
 func (m UIModel) View() string {
 	if !m.ready {
@@ -71,7 +70,7 @@ func (m UIModel) headerView() string {
 	for _, tab := range renderedTabs {
 		placeholderWidth += w(tab)
 	}
-	placeholder := m.theme.StatusBar.Width(m.viewport.Width - w(statusKey) - placeholderWidth).Render("")
+	placeholder := m.theme.StatusBar.Width(m.viewport.Width() - w(statusKey) - placeholderWidth).Render("")
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top,
 		statusKey,
@@ -104,7 +103,7 @@ func (m UIModel) footerView() string {
 	}
 
 	modelVal := m.theme.BottomModelTxt.
-		Width(m.viewport.Width - w(modelKey) - w(status) - w(encoding) - w(viewPortPercent)).
+		Width(m.viewport.Width() - w(modelKey) - w(status) - w(encoding) - w(viewPortPercent)).
 		Render("gemini-2.0-flash")
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top,

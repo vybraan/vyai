@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/v2/list"
 
 	"google.golang.org/genai"
 )

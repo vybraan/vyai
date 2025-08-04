@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/bubbles/v2/list"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textarea"
+	"github.com/charmbracelet/bubbles/v2/viewport"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 )
 

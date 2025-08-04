@@ -6,14 +6,15 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textarea"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/vybraan/vyai/internal/utils"
 )
 
@@ -196,7 +197,7 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 }
 
 func (m UIModel) Init() tea.Cmd {
-	return tea.Batch(tea.EnterAltScreen, tea.EnableMouseAllMotion, tea.EnableMouseCellMotion, textarea.Blink, m.spinner.Tick)
+	return tea.Batch(tea.EnterAltScreen, tea.EnableMouseAllMotion, tea.EnableMouseCellMotion, textarea.Blink)
 }
 
 func (m *UIModel) resetSpinner() {
