@@ -208,12 +208,12 @@ func (m *UIModel) resetSpinner() {
 }
 
 func (m *UIModel) renderViewport(content string) {
-	m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(content))
+	m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width()).Render(content))
 }
-func renderMarkdown(s string) string {
+func renderMarkdown(s string, width int) string {
 	out, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
-		// glamour.WithWordWrap(40), // defaults to 80 - need to expand
+		glamour.WithWordWrap(width), // defaults to 80 - need to expand
 	)
 	renderedMessage, _ := out.Render(strings.TrimSpace(s))
 
