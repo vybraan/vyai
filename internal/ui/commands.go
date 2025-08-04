@@ -18,6 +18,10 @@ import (
 	"github.com/vybraan/vyai/internal/utils"
 )
 
+var focusedMessageBorder = lipgloss.Border{
+	Left: "▌",
+}
+
 func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 	_, err := m.gsService.GetActiveConversation()
@@ -111,19 +115,44 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	return m, nil
 
 }
+
+func renderMessage(message string, focused bool) string {
+
+	borderStyle := lipgloss.NormalBorder()
+	if focused {
+		borderStyle = focusedMessageBorder
+	}
+
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#DFDBDD"))
+
+	//message.Role == User { // check if it is user or model
+	if true { // TODO: need to implement assist styles
+		style = style.PaddingLeft(1).BorderLeft(true).BorderStyle(borderStyle).BorderForeground(lipgloss.Color("#6B50FF"))
+	} else {
+		if focused {
+			style = style.PaddingLeft(1).BorderLeft(true).BorderStyle(borderStyle).BorderForeground(lipgloss.Color("#12C78F"))
+		} else {
+			style = style.PaddingLeft(2)
+		}
+
+	}
+	joined := lipgloss.JoinVertical(lipgloss.Left, message)
+	out := style.Render(joined)
+
+	return out
+}
+
 func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 
 	switch m.activeTab {
 	case 0:
 		if m.state == Insert {
-
 			prompt := m.textarea.Value()
 
-			// renderedMarkdown := renderMarkdown(prompt)
+			message := renderMessage(strings.TrimSpace(prompt), false)
 
-			// m.messages = append(m.messages, m.theme.SenderStyle.Render("# [*] self:")+renderedMarkdown)
-			m.messages = append(m.messages, prompt)
-			m.renderViewport(strings.Join(m.messages, ""))
+			m.messages = append(m.messages, message)
+			m.renderViewport(strings.Join(m.messages, "\n"))
 			m.textarea.Reset()
 			m.viewport.GotoBottom()
 
@@ -156,10 +185,9 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 		for _, message := range messages {
 			renderedMessage := renderMarkdown(message)
 			m.messages = append(m.messages, renderedMessage)
+
 		}
-		m.viewport.SetContent(
-			lipgloss.NewStyle().Width(m.viewport.Width).
-				Render(strings.Join(m.messages, "")))
+		m.renderViewport(strings.Join(m.messages, "\n"))
 
 		m.activeTab = 0
 		m.resetState()
@@ -187,10 +215,10 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 
 		select {
 		case message := <-respChan:
-			renderedMessage := renderMarkdown(message)
-			return statusMsg(m.theme.SenderStyle.Render("# [*] vyai: ") + renderedMessage)
+			renderedMessage := renderMarkdown(message, m.width)
+			return statusMsg(strings.TrimSpace(renderedMessage))
 		case err := <-errChan:
-			renderedError := renderMarkdown("# [*] System\n## Error\n * " + err.Error())
+			renderedError := renderMarkdown("# [*] System\n## Error\n * "+err.Error(), m.width)
 			return errMsg(fmt.Errorf("%v", renderedError))
 		}
 	}
