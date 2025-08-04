@@ -182,9 +182,25 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			return m, nil
 		}
 
-		for _, message := range messages {
-			renderedMessage := renderMarkdown(message)
-			m.messages = append(m.messages, renderedMessage)
+		for _, raw_message := range messages {
+			re := regexp.MustCompile(`(?s)Role:(\w+), Part:(.+)]`)
+			matches := re.FindStringSubmatch(raw_message)
+
+			if len(matches) < 3 {
+				log.Fatalf("could not parse input, raw input: %s", raw_message)
+
+			}
+
+			role := matches[1]
+			part := matches[2]
+
+			if role == "user" {
+				message := renderMessage(strings.TrimSpace(part), false)
+				m.messages = append(m.messages, message)
+			} else {
+				renderedMessage := renderMarkdown(part, m.width)
+				m.messages = append(m.messages, strings.TrimSpace(renderedMessage))
+			}
 
 		}
 		m.renderViewport(strings.Join(m.messages, "\n"))
