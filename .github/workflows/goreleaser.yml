@@ -1,9 +1,12 @@
+# .github/workflows/release.yml
 name: goreleaser
 
 on:
+  pull_request:
   push:
+    # run only against tags
     tags:
-      - '*'
+      - "*"
 
 permissions:
   contents: write
@@ -18,52 +21,30 @@ jobs:
       - run: go test -v ./...
         continue-on-error: true
         # temporarily continue even if unit tests fail
-
-  create_release:
-    runs-on: ubuntu-latest
-    needs: check_build
-    if: github.ref == 'refs/heads/master'
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - name: get the latest tag
-        id: tag
-        run: |
-          latest_tag=$(git describe --tags --abbrev=0)
-          echo "tag_name=$latest_tag" >> $GITHUB_OUTPUT
-
-      - name: create release
-        id: create_release
-        uses: ncipollo/release-action@v1
-        with:
-          token: "${{ secrets.GITHUB_TOKEN }}"
-          tag: ${{ steps.tag.outputs.tag_name }}
-          name: ${{ steps.tag.outputs.tag_name }}
-          draft: false
-          prerelease: false
-
   goreleaser:
-    needs: create_release
+    needs: check_build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
+      # More assembly might be required: Docker logins, GPG, etc.
+      # It all depends on your needs.
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
+          # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
-          version: latest
+          # 'latest', 'nightly', or a semver
+          version: "~> v2"
           args: release --clean
-          workdir: cmd
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Your GoReleaser Pro key, if you are using the 'goreleaser-pro' distribution
+          # GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+
