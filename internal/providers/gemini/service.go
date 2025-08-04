@@ -3,6 +3,7 @@ package gemini
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/utils"
@@ -26,7 +27,12 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 	// field in the conversation when newly created so when create a new one before
 	// it happens give it description
 	if gs.cm.active != nil && !gs.cm.active.DescriptionLocked {
-		desc, err := gs.SendEphemeralMessage(c, utils.DESCRIPTION_PROMPT)
+		messages, err := gs.cm.active.Repo.GetMessages()
+		if err != nil {
+			return err
+		}
+
+		desc, err := utils.GenerateEphemeralMessage(c, strings.Join(messages, "\n")+utils.DESCRIPTION_PROMPT)
 		if err != nil {
 			return err
 		}
@@ -88,23 +94,6 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 	return result, nil
 }
 
-func (gs *GeminiService) SendEphemeralMessage(c context.Context, message string) (string, error) {
-
-	conversation, err := gs.cm.GetActiveConversation()
-	if err != nil {
-
-		_, err = gs.NewConversation(c)
-		return "", err
-	}
-
-	result, err := conversation.Repo.SendMessage(c, genai.Text(message))
-
-	if err != nil {
-		return "", err
-	}
-	return result, nil
-}
-
 func (gs *GeminiService) GetAllConversations() ([]utils.Item, error) {
 	var items []utils.Item
 
@@ -131,10 +120,6 @@ func (gs *GeminiService) SwitchConversation(c context.Context, id string) error 
 	if err != nil {
 		return err
 	}
-
-	// if gs.cm.active != nil {
-	// 	gs.cm.active.DescriptionLocked = true
-	// }
 
 	return nil
 }

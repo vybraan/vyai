@@ -118,9 +118,10 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 
 			prompt := m.textarea.Value()
 
-			renderedMarkdown := renderMarkdown(prompt)
+			// renderedMarkdown := renderMarkdown(prompt)
 
-			m.messages = append(m.messages, m.theme.SenderStyle.Render("# [*] self:")+renderedMarkdown)
+			// m.messages = append(m.messages, m.theme.SenderStyle.Render("# [*] self:")+renderedMarkdown)
+			m.messages = append(m.messages, prompt)
 			m.renderViewport(strings.Join(m.messages, ""))
 			m.textarea.Reset()
 			m.viewport.GotoBottom()
@@ -153,7 +154,7 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 
 		for _, message := range messages {
 			renderedMessage := renderMarkdown(message)
-			m.messages = append(m.messages, m.theme.SenderStyle.Render("# [*] vyai: ")+i.Description()+renderedMessage)
+			m.messages = append(m.messages, renderedMessage)
 		}
 		m.viewport.SetContent(
 			lipgloss.NewStyle().Width(m.viewport.Width).
