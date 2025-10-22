@@ -37,7 +37,7 @@ func NewUIModel(gs *gemini.GeminiService) UIModel {
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
 	ta.CharLimit = -1
-	ta.VirtualCursor = false
+	ta.VirtualCursor = true
 	ta.Focus()
 
 	ta.Placeholder = "Ask Anything..."
