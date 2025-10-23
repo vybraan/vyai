@@ -11,6 +11,7 @@ import (
 type (
 	errMsg    error
 	statusMsg string
+	editorMsg string
 )
 
 type State string

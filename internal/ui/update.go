@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"math/rand/v2"
+	"os"
 	"strconv"
 	"strings"
 
@@ -105,7 +107,6 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 
 			m.viewport = viewport.New(viewport.WithWidth(msg.Width), viewport.WithHeight(msg.Height-verticalMarginHeight))
-
 			m.viewport.Style = m.theme.ViewportStyleNormal
 			m.viewport.SetContent(`Welcome to vyai - cli interface for AI!`)
 			m.viewport.MouseWheelEnabled = false
@@ -136,7 +137,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			return m, tea.Quit
+			cmds = append(cmds, tea.Quit)
 		case "tab", "ctrl+right", "shift+tab", "ctrl+left":
 			m.state = Normal
 			m.updateViewportStyle()
@@ -151,19 +152,21 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 1 {
 				m.refreshExploreList()
 			}
-			return m, nil
 		case "ctrl+e":
 			if m.activeTab != 0 || m.state != Insert {
 				return m, nil
 			}
-			m, cmd := m.openEditorForTextarea()
-			return m, cmd
+			// m, cmd := m.openEditorForTextarea()
+			_, cmd := m.openEditorForTextarea()
+			// return m, cmd
+			cmds = append(cmds, cmd)
 		case "ctrl+n":
 			if m.activeTab != 0 || m.state != Normal {
-				return m, nil
 			}
-			m, cmd := m.NewConversation()
-			return m, cmd
+			// m, cmd := m.NewConversation()
+			_, cmd := m.NewConversation()
+			cmds = append(cmds, cmd)
+
 		case "enter":
 			if m.loading {
 				return m, nil
@@ -194,7 +197,6 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.updateViewportStyle()
-
 		}
 
 	case statusMsg:
@@ -207,7 +209,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+
+		cmds = append(cmds, cmd)
+
 	case errMsg:
 		m.err = msg
 		m.loading = false
@@ -215,7 +219,16 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resetSpinner()
 		m.renderViewport(strings.Join(m.messages, ""))
 		m.viewport.GotoBottom()
-		return m, nil
+	case editorMsg:
+
+		defer os.Remove(string(msg))
+		content, err := os.ReadFile(string(msg))
+		if err != nil {
+			return m, func() tea.Msg { return errMsg(fmt.Errorf("Error reading file")) }
+		}
+
+		m.textarea.SetValue(string(content))
+
 	}
 	return m, tea.Batch(cmds...)
 }

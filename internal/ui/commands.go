@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/spinner"
@@ -35,8 +35,6 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 		return m, func() tea.Msg {
 			return errMsg(err)
 		}
-		// log.Fatal(err)
-		// return m, nil
 	}
 
 	m.messages = []string{}
@@ -70,7 +68,6 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 		log.Printf("Error creating temp file: %s", err)
 		return m, nil
 	}
-	defer os.Remove(tempFile.Name())
 
 	err = os.WriteFile(tempFile.Name(), []byte(m.textarea.Value()), 0644)
 	if err != nil {
@@ -80,39 +77,45 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 
 	editor := os.Getenv("EDITOR")
 
-	var cmd *exec.Cmd
-	if editor != "" {
-		cmd = exec.Command(editor, tempFile.Name())
-	} else {
-		if runtime.GOOS == "windows" {
-			// Not supported yet
-			// cmd = exec.Command("write", tempFile.Name())
-			return m, func() tea.Msg {
-				return errMsg(fmt.Errorf("%s", "no editor configured. Please set $EDITOR."))
-			}
-		} else {
-			cmd = exec.Command("vi", tempFile.Name())
+	knownEditors := [...]string{
+		editor,
+		"vim",
+		"vi",
+		"nano",
+		"ed",
+	}
+
+	for _, cmd := range knownEditors {
+		path, err := exec.LookPath(cmd)
+		if err != nil {
+			continue
+		}
+		editor = path
+		break
+	}
+
+	if editor == "" {
+		return m, func() tea.Msg {
+			return errMsg(fmt.Errorf("env EDITOR not set, nor any %v found in PATH", knownEditors[1:]))
 		}
 	}
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	var cmd *exec.Cmd
+	cmd = exec.Command(editor, tempFile.Name())
 
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Error opeding the editor: %s", err)
-		return m, nil
-	}
+	cmd.Dir = filepath.Dir(tempFile.Name())
 
-	content, err := os.ReadFile(tempFile.Name())
-	if err != nil {
-		log.Printf("Error reading the file: %s", err)
-		return m, nil
-	}
+	execCmd := tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return func() tea.Msg { return errMsg(err) }
+	})
 
-	m.textarea.SetValue(string(content))
-	return m, nil
+	return m, tea.Sequence(
+		execCmd,
+		func() tea.Msg {
+
+			return editorMsg(tempFile.Name())
+		},
+	)
 
 }
 
