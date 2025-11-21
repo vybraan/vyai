@@ -45,7 +45,6 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 	m.renderViewport("New conversation started")
 	m.resetState()
 
-	
 	items, err := m.gsService.GetAllConversations()
 	if err == nil {
 
@@ -124,8 +123,7 @@ func renderMessage(message string, focused bool) string {
 		borderStyle = focusedMessageBorder
 	}
 
-	style := lipgloss.NewStyle().Foreground	tempFile, err := os.CreateTemp("", temp)
-(lipgloss.Color("#DFDBDD"))
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#DFDBDD"))
 
 	//message.Role == User { // check if it is user or model
 	if true { // TODO: need to implement assist styles
@@ -243,9 +241,9 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 
 func (m UIModel) Init() tea.Cmd {
 	return tea.Batch(
-		tea.EnterAltScreen, 
-		tea.EnableMouseAllMotion, 
-		tea.EnableMouseCellMotion, 
+		tea.EnterAltScreen,
+		tea.EnableMouseAllMotion,
+		tea.EnableMouseCellMotion,
 		textarea.Blink,
 		tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg { return CheckForDescriptionUpdatesCmd(m.gsService)() }),
 	)
