@@ -37,6 +37,29 @@ type Theme struct {
 	Name   string
 	IsDark bool
 
+	// Primary   color.Color
+	// Secondary color.Color
+	// Tertiary  color.Color
+	// Accent    color.Color
+	//
+	// BgBase        color.Color
+	// BgBaseLighter color.Color
+	// BgSubtle      color.Color
+	// BgOverlay     color.Color
+	//
+	// FgBase      color.Color
+	// FgMuted     color.Color
+	// FgHalfMuted color.Color
+	// FgSubtle    color.Color
+	// FgSelected  color.Color
+	//
+	// Border      color.Color
+	// BorderFocus color.Color
+	//
+	// Success color.Color
+	// Error   color.Color
+	// Warning color.Color
+	// Info    color.Color
 
 	Styles *Styles
 

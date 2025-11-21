@@ -171,8 +171,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.loading {
 				return m, nil
 			}
-			m, enterCmd := m.handleKeyEnter()
-			return m, enterCmd
+			var enterCmd tea.Cmd
+			m, enterCmd = m.handleKeyEnter()
+			cmds = append(cmds, enterCmd)
 
 		default:
 			switch msg.String() {
@@ -229,6 +230,8 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.textarea.SetValue(string(content))
 
+	case descriptionUpdatedMsg:
+		m.refreshExploreList()
 	}
 	return m, tea.Batch(cmds...)
 }
