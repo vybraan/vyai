@@ -6,21 +6,23 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strings"
-	// "time"
 )
 
 type Conversation struct {
-	ID                string
-	Description       string
-	Repo              HistoryRepository
-	DescriptionLocked bool
+	ID                 string
+	Description        string
+	Repo               HistoryRepository
+	DescriptionLocked  bool
+	DescriptionChannel chan string
 }
 
 func NewConversation(repo HistoryRepository) *Conversation {
 	return &Conversation{
-		ID:                GenerateRandomConversationID(),
-		Repo:              repo,
-		DescriptionLocked: false,
+		ID:                 GenerateRandomConversationID(),
+		Repo:               repo,
+		Description:        "New Conversation...",
+		DescriptionLocked:  false,
+		DescriptionChannel: make(chan string, 1),
 	}
 }
 
@@ -29,8 +31,6 @@ func (c *Conversation) SetDescription(description string) {
 }
 
 func GenerateRandomConversationID() string {
-	// return fmt.Sprintf("CONVERSATION-%d", time.Now().UnixNano())
-	// rand.S(time.Now().UnixNano())
 
 	randomString := fmt.Sprintf("%x-%x-%x", rand.Int(), rand.Int(), rand.Int())
 	hash := md5.Sum([]byte(randomString))

@@ -9,9 +9,13 @@ import (
 )
 
 type (
-	errMsg    error
-	statusMsg string
-	editorMsg string
+	errMsg              error
+	statusMsg         string
+	editorMsg         string
+	descriptionUpdatedMsg struct {
+		ID          string
+		Description string
+	}
 )
 
 type State string
