@@ -15,38 +15,53 @@ type HistoryRepository interface {
 }
 
 type MemoryHistoryRepository struct {
-	cs *genai.ChatSession
+	chatSession      *genai.ChatSession
+	cachedMessages   []string
+	needsCacheUpdate bool
+	messageLimit     int
 }
 
 func NewMemoryHistoryRepository(cs *genai.ChatSession) *MemoryHistoryRepository {
 	return &MemoryHistoryRepository{
-		cs: cs,
+		chatSession:      cs,
+		needsCacheUpdate: true,
+		messageLimit:     20,
 	}
 }
 
 func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
+	if !mhr.needsCacheUpdate {
+		return mhr.cachedMessages, nil
+	}
 
-	if mhr.cs == nil {
+	if mhr.chatSession == nil {
 		return nil, errors.New("chat session is not initialized")
 	}
-	if len(mhr.cs.History) == 0 {
+	if len(mhr.chatSession.History) == 0 {
 		return nil, errors.New("no messages in history")
 	}
 
 	var messages []string
-	for _, content := range mhr.cs.History {
+	for _, content := range mhr.chatSession.History {
 		for _, part := range content.Parts {
 			if text, ok := part.(genai.Text); ok {
 				messages = append(messages, fmt.Sprintf("[Role:%s, Part:%s]", content.Role, text))
 			}
 		}
 	}
+	mhr.cachedMessages = messages
+	mhr.needsCacheUpdate = false
 	return messages, nil
-
 }
 
 func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Text) (string, error) {
-	result, err := mhr.cs.SendMessage(c, text)
+	result, err := mhr.chatSession.SendMessage(c, text)
+	mhr.needsCacheUpdate = true // Invalidate cache on new message
+
+	// Prune older messages if the limit is exceeded
+	if len(mhr.chatSession.History) > mhr.messageLimit {
+		mhr.chatSession.History = mhr.chatSession.History[len(mhr.chatSession.History)-mhr.messageLimit:]
+	}
 
 	if err != nil {
 		return "", errors.New("failed to send a message")
