@@ -20,27 +20,28 @@ func NewGeminiService(cm *ConversationManager) *GeminiService {
 }
 
 func (gs *GeminiService) SetConversationDescription(c context.Context, lock_description bool) error {
-
-	// use send epheral messages to ask the model to give a description to the chat
-	// and store it in the conversation
-	// this is a workaround for the fact that the  does not have a Description
-	// field in the conversation when newly created so when create a new one before
-	// it happens give it description
-	if gs.cm.active != nil && !gs.cm.active.DescriptionLocked {
+	// Only generate a description if it's the placeholder and not locked
+	if gs.cm.active != nil && gs.cm.active.Description == "New Conversation..." && !gs.cm.active.DescriptionLocked {
 		messages, err := gs.cm.active.Repo.GetMessages()
 		if err != nil {
+			if err.Error() == "no messages in history" {
+				return nil // No messages yet, expected during initialization
+			}
 			return err
 		}
 
-		desc, err := utils.GenerateEphemeralMessage(c, strings.Join(messages, "\n")+utils.DESCRIPTION_PROMPT)
-		if err != nil {
-			return err
-		}
-		gs.cm.active.SetDescription(desc)
+		go func() {
+			desc, err := utils.GenerateEphemeralMessage(c, strings.Join(messages, "\n")+utils.DESCRIPTION_PROMPT)
+			if err != nil {
+				// Log the error or handle it appropriately, but don't block
+				fmt.Printf("Error generating description: %v\n", err)
+				return
+			}
+			gs.cm.active.DescriptionChannel <- desc
+		}()
 		gs.cm.active.DescriptionLocked = lock_description
 	}
 	return nil
-
 }
 
 func (gs *GeminiService) ClearConversation(c context.Context) error {
@@ -86,8 +87,16 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 		return "", err
 	}
 
-	//Set the first time description and set it to still be able to be updated later
-	if conversation.Description == "" {
+	// Listen for description update
+	select {
+	case desc := <-conversation.DescriptionChannel:
+		conversation.SetDescription(desc)
+		conversation.DescriptionLocked = false
+	default:
+	}
+
+	// Set the first time description and set it to still be able to be updated later
+	if conversation.Description == "New Conversation..." {
 		gs.SetConversationDescription(c, false)
 	}
 
