@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/google/generative-ai-go/genai"
 )
@@ -19,6 +20,7 @@ type MemoryHistoryRepository struct {
 	cachedMessages   []string
 	needsCacheUpdate bool
 	messageLimit     int
+	mu               sync.RWMutex
 }
 
 func NewMemoryHistoryRepository(cs *genai.ChatSession) *MemoryHistoryRepository {
@@ -30,6 +32,17 @@ func NewMemoryHistoryRepository(cs *genai.ChatSession) *MemoryHistoryRepository 
 }
 
 func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
+	mhr.mu.RLock()
+	if !mhr.needsCacheUpdate {
+		defer mhr.mu.RUnlock()
+		return mhr.cachedMessages, nil
+	}
+	mhr.mu.RUnlock()
+
+	mhr.mu.Lock()
+	defer mhr.mu.Unlock()
+
+	// Re-check condition after acquiring write lock to avoid redundant work
 	if !mhr.needsCacheUpdate {
 		return mhr.cachedMessages, nil
 	}

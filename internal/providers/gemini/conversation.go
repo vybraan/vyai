@@ -6,29 +6,61 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strings"
+	"sync"
 )
 
 type Conversation struct {
 	ID                 string
-	Description        string
+	description        string
 	Repo               HistoryRepository
-	DescriptionLocked  bool
+	descriptionLocked  bool
 	DescriptionChannel chan string
+
+	once sync.Once
+	mu   sync.RWMutex
 }
 
 func NewConversation(repo HistoryRepository) *Conversation {
-	return &Conversation{
+	c := &Conversation{
 		ID:                 GenerateRandomConversationID(),
 		Repo:               repo,
-		Description:        "New Conversation...",
-		DescriptionLocked:  false,
+		description:        "New Conversation...",
+		descriptionLocked:  false,
 		DescriptionChannel: make(chan string, 1),
 	}
+	return c
 }
 
 func (c *Conversation) SetDescription(description string) {
-	c.Description = description
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.description = description
 }
+
+func (c *Conversation) GetDescription() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.description
+}
+
+func (c *Conversation) SetDescriptionLocked(locked bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.descriptionLocked = locked
+}
+
+func (c *Conversation) IsDescriptionLocked() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.descriptionLocked
+}
+
+func (c *Conversation) Close() {
+	c.once.Do(func() {
+		close(c.DescriptionChannel)
+	})
+}
+
 
 func GenerateRandomConversationID() string {
 

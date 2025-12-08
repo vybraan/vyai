@@ -59,5 +59,5 @@ func (cm *ConversationManager) GetConversationDescription(id string) (string, er
 	if !exists {
 		return "", fmt.Errorf("no description found for conversation %s", id)
 	}
-	return conversation.Description, nil
+	return conversation.description, nil
 }
