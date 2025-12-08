@@ -69,12 +69,15 @@ func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
 
 func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Text) (string, error) {
 	result, err := mhr.chatSession.SendMessage(c, text)
+	mhr.mu.Lock()
 	mhr.needsCacheUpdate = true // Invalidate cache on new message
 
 	// Prune older messages if the limit is exceeded
 	if len(mhr.chatSession.History) > mhr.messageLimit {
 		mhr.chatSession.History = mhr.chatSession.History[len(mhr.chatSession.History)-mhr.messageLimit:]
 	}
+
+	mhr.mu.Unlock()
 
 	if err != nil {
 		return "", errors.New("failed to send a message")

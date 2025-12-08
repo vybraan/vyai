@@ -280,14 +280,23 @@ func CheckForDescriptionUpdatesCmd(gsService *gemini.GeminiService) tea.Cmd {
 	return func() tea.Msg {
 		conv, err := gsService.GetActiveConversation()
 		if err != nil {
-			return nil
+			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
+				return CheckForDescriptionUpdatesCmd(gsService)()
+			})()
 		}
 
 		select {
 		case desc := <-conv.DescriptionChannel:
-			return descriptionUpdatedMsg{ID: conv.ID, Description: desc}
+			msg := descriptionUpdatedMsg{ID: conv.ID, Description: desc}
+			// Schedule next check
+			tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
+				return CheckForDescriptionUpdatesCmd(gsService)()
+			})()
+			return msg
 		default:
-			return nil // No update yet
+			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
+				return CheckForDescriptionUpdatesCmd(gsService)()
+			})()
 		}
 	}
 }

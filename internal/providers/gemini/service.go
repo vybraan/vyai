@@ -33,6 +33,7 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 			return err
 		}
 
+		conv := gs.cm.active
 		go func() {
 			desc, err := utils.GenerateEphemeralMessage(c, strings.Join(messages, "\n")+utils.DESCRIPTION_PROMPT)
 			if err != nil {
@@ -40,7 +41,7 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 				return
 			}
 			select {
-			case gs.cm.active.DescriptionChannel <- desc:
+			case conv.DescriptionChannel <- desc:
 			case <-c.Done():
 				gs.logger.Debugf("Context cancelled, not sending description")
 				return
@@ -117,6 +118,9 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 
 func (gs *GeminiService) GetAllConversations() ([]utils.Item, error) {
 	var items []utils.Item
+
+	gs.cm.mu.RLock()
+	defer gs.cm.mu.RUnlock()
 
 	for _, conv := range gs.cm.conversations {
 		conversationItem := utils.NewItem(conv.ID, conv.GetDescription())

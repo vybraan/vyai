@@ -29,8 +29,8 @@ func (cm *ConversationManager) StartNewConversation(repo HistoryRepository) *Con
 }
 
 func (cm *ConversationManager) SwitchConversation(id string) error {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 
 	conversation, exists := cm.conversations[id]
 	if !exists {
@@ -59,5 +59,5 @@ func (cm *ConversationManager) GetConversationDescription(id string) (string, er
 	if !exists {
 		return "", fmt.Errorf("no description found for conversation %s", id)
 	}
-	return conversation.description, nil
+	return conversation.GetDescription(), nil
 }
