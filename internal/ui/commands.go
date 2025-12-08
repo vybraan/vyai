@@ -288,11 +288,13 @@ func CheckForDescriptionUpdatesCmd(gsService *gemini.GeminiService) tea.Cmd {
 		select {
 		case desc := <-conv.DescriptionChannel:
 			msg := descriptionUpdatedMsg{ID: conv.ID, Description: desc}
-			// Schedule next check
-			tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
-				return CheckForDescriptionUpdatesCmd(gsService)()
-			})()
-			return msg
+			// return msg and Schedule next check
+			return tea.Batch(
+				func() tea.Msg { return msg },
+				tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
+					return CheckForDescriptionUpdatesCmd(gsService)()
+				}),
+			)()
 		default:
 			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
 				return CheckForDescriptionUpdatesCmd(gsService)()

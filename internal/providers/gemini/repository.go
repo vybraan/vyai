@@ -69,6 +69,11 @@ func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
 
 func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Text) (string, error) {
 	result, err := mhr.chatSession.SendMessage(c, text)
+
+	if err != nil {
+		return "", errors.New("failed to send a message")
+	}
+
 	mhr.mu.Lock()
 	mhr.needsCacheUpdate = true // Invalidate cache on new message
 
@@ -78,10 +83,6 @@ func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Te
 	}
 
 	mhr.mu.Unlock()
-
-	if err != nil {
-		return "", errors.New("failed to send a message")
-	}
 
 	var response strings.Builder
 

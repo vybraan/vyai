@@ -35,6 +35,11 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 
 		conv := gs.cm.active
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					gs.logger.Errorf("Recovered from panic in SetConversationDescription goroutine: %v", r)
+				}
+			}()
 			desc, err := utils.GenerateEphemeralMessage(c, strings.Join(messages, "\n")+utils.DESCRIPTION_PROMPT)
 			if err != nil {
 				gs.logger.Errorf("Error generating description: %v", err)
@@ -59,7 +64,9 @@ func (gs *GeminiService) ClearConversation(c context.Context) error {
 	}
 
 	conversation.Close()
+	gs.cm.mu.Lock()
 	gs.cm.active = nil
+	gs.cm.mu.Unlock()
 
 	return nil
 }
