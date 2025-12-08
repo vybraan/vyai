@@ -6,31 +6,63 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strings"
-	// "time"
+	"sync"
 )
 
 type Conversation struct {
-	ID                string
-	Description       string
-	Repo              HistoryRepository
-	DescriptionLocked bool
+	ID                 string
+	description        string
+	Repo               HistoryRepository
+	descriptionLocked  bool
+	DescriptionChannel chan string
+
+	once sync.Once
+	mu   sync.RWMutex
 }
 
 func NewConversation(repo HistoryRepository) *Conversation {
-	return &Conversation{
-		ID:                GenerateRandomConversationID(),
-		Repo:              repo,
-		DescriptionLocked: false,
+	c := &Conversation{
+		ID:                 GenerateRandomConversationID(),
+		Repo:               repo,
+		description:        "New Conversation...",
+		descriptionLocked:  false,
+		DescriptionChannel: make(chan string, 1),
 	}
+	return c
 }
 
 func (c *Conversation) SetDescription(description string) {
-	c.Description = description
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.description = description
 }
 
+func (c *Conversation) GetDescription() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.description
+}
+
+func (c *Conversation) SetDescriptionLocked(locked bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.descriptionLocked = locked
+}
+
+func (c *Conversation) IsDescriptionLocked() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.descriptionLocked
+}
+
+func (c *Conversation) Close() {
+	c.once.Do(func() {
+		close(c.DescriptionChannel)
+	})
+}
+
+
 func GenerateRandomConversationID() string {
-	// return fmt.Sprintf("CONVERSATION-%d", time.Now().UnixNano())
-	// rand.S(time.Now().UnixNano())
 
 	randomString := fmt.Sprintf("%x-%x-%x", rand.Int(), rand.Int(), rand.Int())
 	hash := md5.Sum([]byte(randomString))

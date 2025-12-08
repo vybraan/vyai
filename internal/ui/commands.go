@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/vybraan/vyai/internal/providers/gemini"
 	"github.com/vybraan/vyai/internal/utils"
 )
 
@@ -43,10 +45,6 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 	m.renderViewport("New conversation started")
 	m.resetState()
 
-	// Update the conversation list immediately so it doesn't bug when change to explore
-	// Todo:
-	// need check if needs to be in a separate routine because it might block the ui while
-	//is not importand for this take of update
 	items, err := m.gsService.GetAllConversations()
 	if err == nil {
 
@@ -62,7 +60,6 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 
 	temp := "vyai-conversation_*.md"
-	// Open the file with $EDITOR and when done editing quiting the editot the contend of the file will be read to the variable and wtritten to the textarea
 	tempFile, err := os.CreateTemp("", temp)
 	if err != nil {
 		log.Printf("Error creating temp file: %s", err)
@@ -216,7 +213,6 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 	return m, nil
 }
 
-// using routines here is just overkill now - Justifiable to implement cancelation in the future
 func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		respChan := make(chan string)
@@ -244,7 +240,13 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 }
 
 func (m UIModel) Init() tea.Cmd {
-	return tea.Batch(tea.EnterAltScreen, tea.EnableMouseAllMotion, tea.EnableMouseCellMotion, textarea.Blink)
+	return tea.Batch(
+		tea.EnterAltScreen,
+		tea.EnableMouseAllMotion,
+		tea.EnableMouseCellMotion,
+		textarea.Blink,
+		tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg { return CheckForDescriptionUpdatesCmd(m.gsService)() }),
+	)
 }
 
 func (m *UIModel) resetSpinner() {
@@ -272,4 +274,31 @@ func (m *UIModel) resetState() {
 	m.textarea.Reset()
 	m.viewport.GotoBottom()
 	m.viewport.MouseWheelEnabled = false
+}
+
+func CheckForDescriptionUpdatesCmd(gsService *gemini.GeminiService) tea.Cmd {
+	return func() tea.Msg {
+		conv, err := gsService.GetActiveConversation()
+		if err != nil {
+			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
+				return CheckForDescriptionUpdatesCmd(gsService)()
+			})()
+		}
+
+		select {
+		case desc := <-conv.DescriptionChannel:
+			msg := descriptionUpdatedMsg{ID: conv.ID, Description: desc}
+			// return msg and Schedule next check
+			return tea.Batch(
+				func() tea.Msg { return msg },
+				tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
+					return CheckForDescriptionUpdatesCmd(gsService)()
+				}),
+			)()
+		default:
+			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
+				return CheckForDescriptionUpdatesCmd(gsService)()
+			})()
+		}
+	}
 }

@@ -15,7 +15,6 @@ func (m UIModel) View() string {
 	switch m.activeTab {
 	case 0:
 		if m.loading {
-			// Testing to show spinner when waiting for the models response
 			loadGap := "\n\n"
 			return fmt.Sprintf(
 				"%s\n%s%s%s\n%s", m.headerView(),
