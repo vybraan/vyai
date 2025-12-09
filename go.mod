@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta.1
 	github.com/charmbracelet/log v0.4.2
 	github.com/google/generative-ai-go v0.19.0
+	github.com/grahms/promptweaver v0.0.1
 	google.golang.org/api v0.197.0
 	google.golang.org/genai v1.18.0
 )
