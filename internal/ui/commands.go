@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +47,9 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 		m.explore.SetItems(utils.ConvertToItemList(items))
 	} else {
-		log.Printf("Error loading conversations: %v", err)
+		return m, func() tea.Msg {
+			return serviceNoticeMsg("Conversation list could not be refreshed.")
+		}
 	}
 
 	return m, nil
@@ -60,14 +61,16 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	temp := "vyai-conversation_*.md"
 	tempFile, err := os.CreateTemp("", temp)
 	if err != nil {
-		log.Printf("Error creating temp file: %s", err)
-		return m, nil
+		return m, func() tea.Msg {
+			return errMsg(fmt.Errorf("Editor could not be opened: %s", summarizeUserError(err)))
+		}
 	}
 
 	err = os.WriteFile(tempFile.Name(), []byte(m.textarea.Value()), 0644)
 	if err != nil {
-		log.Printf("Error writing to temp file: %s", err)
-		return m, nil
+		return m, func() tea.Msg {
+			return errMsg(fmt.Errorf("Editor temp file could not be prepared: %s", summarizeUserError(err)))
+		}
 	}
 
 	editor := os.Getenv("EDITOR")
@@ -101,7 +104,10 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	cmd.Dir = filepath.Dir(tempFile.Name())
 
 	execCmd := tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return func() tea.Msg { return errMsg(err) }
+		if err == nil {
+			return nil
+		}
+		return errMsg(fmt.Errorf("Editor exited with an error: %s", summarizeUserError(err)))
 	})
 
 	return m, tea.Sequence(
@@ -260,11 +266,18 @@ func (m *UIModel) renderViewport(content string) {
 	m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width()).Render(content))
 }
 func renderMarkdown(s string, width int) string {
-	out, _ := glamour.NewTermRenderer(
+	out, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(width), // defaults to 80 - need to expand
 	)
-	renderedMessage, _ := out.Render(strings.TrimSpace(s))
+	if err != nil {
+		return strings.TrimSpace(s)
+	}
+
+	renderedMessage, err := out.Render(strings.TrimSpace(s))
+	if err != nil {
+		return strings.TrimSpace(s)
+	}
 
 	return renderedMessage
 }

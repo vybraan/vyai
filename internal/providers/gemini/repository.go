@@ -79,7 +79,7 @@ func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Te
 	result, err := mhr.chatSession.SendMessage(c, text)
 
 	if err != nil {
-		return "", errors.New("failed to send a message")
+		return "", fmt.Errorf("send message: %w", err)
 	}
 
 	mhr.mu.Lock()
