@@ -5,6 +5,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	"github.com/charmbracelet/bubbles/v2/viewport"
+	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 )
 
@@ -54,4 +55,5 @@ type UIModel struct {
 	Tabs         []string
 	activeTab    int
 	ready        bool
+	agent        *agent.AgentEngine
 }

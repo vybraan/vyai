@@ -82,7 +82,7 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 		gs.cm.active.Close()
 	}
 
-	cs, err := NewChatSession(c, "gemini-2.0-flash")
+	cs, err := NewChatSession(c, "gemini-3-flash-preview")
 	if err != nil {
 		return nil, err
 	}

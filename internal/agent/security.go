@@ -18,7 +18,7 @@ func SecureJoin(base, rel string) (string, error) {
 }
 
 func AllowCommand(cmd string) bool {
-	allowed := []string{"ls", "cat", "go", "git", "npm"}
+	allowed := []string{"ls", "cat", "go", "git", "npm", "grep", "glob", "mv", "rm", "goimports", "gofmt", "go build", "go test", "go vet"}
 	for _, a := range allowed {
 		if strings.HasPrefix(cmd, a+" ") || cmd == a {
 			return true

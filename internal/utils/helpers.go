@@ -36,7 +36,7 @@ func GenerateEphemeralMessage(c context.Context, message string) (string, error)
 
 	result, err := client.Models.GenerateContent(
 		c,
-		"gemini-2.0-flash",
+		"gemini-3-flash-preview",
 		genai.Text(message),
 		&genai.GenerateContentConfig{
 			ThinkingConfig: &genai.ThinkingConfig{

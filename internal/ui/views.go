@@ -103,7 +103,7 @@ func (m UIModel) footerView() string {
 
 	modelVal := m.theme.BottomModelTxt.
 		Width(m.viewport.Width() - w(modelKey) - w(status) - w(encoding) - w(viewPortPercent)).
-		Render("gemini-2.0-flash")
+		Render("gemini-3-flash-preview")
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top,
 		status,
