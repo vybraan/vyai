@@ -233,8 +233,7 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 			renderedMessage := renderMarkdown(message, m.width)
 			return statusMsg(strings.TrimSpace(renderedMessage))
 		case err := <-errChan:
-			renderedError := renderMarkdown("# [*] System\n## Error\n * "+err.Error(), m.width)
-			return errMsg(fmt.Errorf("%v", renderedError))
+			return errMsg(fmt.Errorf("Request failed: %s", summarizeUserError(err)))
 		}
 	}
 }
@@ -246,6 +245,7 @@ func (m UIModel) Init() tea.Cmd {
 		tea.EnableMouseCellMotion,
 		textarea.Blink,
 		WaitForDescriptionUpdateCmd(m.gsService),
+		WaitForServiceNoticeCmd(m.gsService),
 	)
 }
 
@@ -284,5 +284,41 @@ func WaitForDescriptionUpdateCmd(gsService *gemini.GeminiService) tea.Cmd {
 		}
 
 		return descriptionUpdatedMsg{ID: update.ID, Description: update.Description}
+	}
+}
+
+func WaitForServiceNoticeCmd(gsService *gemini.GeminiService) tea.Cmd {
+	return func() tea.Msg {
+		notice, ok := <-gsService.Notices()
+		if !ok {
+			return nil
+		}
+
+		return serviceNoticeMsg(notice.Message)
+	}
+}
+
+func summarizeUserError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+
+	msg := strings.TrimSpace(err.Error())
+	lower := strings.ToLower(msg)
+
+	switch {
+	case strings.Contains(lower, "resource_exhausted"),
+		strings.Contains(lower, "quota exceeded"),
+		strings.Contains(lower, "rate limit"),
+		strings.Contains(lower, "error 429"):
+		return "Gemini API quota exceeded. Try again shortly."
+	case strings.Contains(lower, "api key"):
+		return "GOOGLE_API_KEY is missing or invalid."
+	case strings.Contains(lower, "timeout"),
+		strings.Contains(lower, "deadline exceeded"),
+		strings.Contains(lower, "context deadline exceeded"):
+		return "request timed out."
+	default:
+		return msg
 	}
 }

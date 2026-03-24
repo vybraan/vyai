@@ -15,10 +15,15 @@ type DescriptionUpdate struct {
 	Description string
 }
 
+type Notice struct {
+	Message string
+}
+
 type GeminiService struct {
 	cm                 *ConversationManager
 	logger             *log.Logger
 	descriptionUpdates chan DescriptionUpdate
+	notices            chan Notice
 }
 
 func NewGeminiService(cm *ConversationManager) *GeminiService {
@@ -26,6 +31,7 @@ func NewGeminiService(cm *ConversationManager) *GeminiService {
 		cm:                 cm,
 		logger:             log.Default(),
 		descriptionUpdates: make(chan DescriptionUpdate, 8),
+		notices:            make(chan Notice, 8),
 	}
 }
 
@@ -49,7 +55,9 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 			}()
 			desc, err := utils.GenerateEphemeralMessage(c, buildDescriptionPrompt(messages)+utils.DESCRIPTION_PROMPT)
 			if err != nil {
-				gs.logger.Errorf("Error generating description: %v", err)
+				notice := summarizeGeminiError("Conversation title was not updated", err)
+				gs.publishNotice(notice)
+				gs.logger.Warnf("%s", notice)
 				return
 			}
 			desc = strings.TrimSpace(desc)
@@ -178,6 +186,10 @@ func (gs *GeminiService) DescriptionUpdates() <-chan DescriptionUpdate {
 	return gs.descriptionUpdates
 }
 
+func (gs *GeminiService) Notices() <-chan Notice {
+	return gs.notices
+}
+
 func buildDescriptionPrompt(messages []Message) string {
 	var parts []string
 	for _, message := range messages {
@@ -185,4 +197,41 @@ func buildDescriptionPrompt(messages []Message) string {
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+func (gs *GeminiService) publishNotice(message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+
+	select {
+	case gs.notices <- Notice{Message: message}:
+	default:
+	}
+}
+
+func summarizeGeminiError(prefix string, err error) string {
+	if err == nil {
+		return prefix
+	}
+
+	raw := err.Error()
+	lower := strings.ToLower(raw)
+
+	switch {
+	case strings.Contains(lower, "resource_exhausted"),
+		strings.Contains(lower, "quota exceeded"),
+		strings.Contains(lower, "rate limit"),
+		strings.Contains(lower, "error 429"):
+		return prefix + ": Gemini API quota exceeded. Try again shortly."
+	case strings.Contains(lower, "api key"):
+		return prefix + ": GOOGLE_API_KEY is missing or invalid."
+	case strings.Contains(lower, "deadline exceeded"),
+		strings.Contains(lower, "context deadline exceeded"),
+		strings.Contains(lower, "timeout"):
+		return prefix + ": request timed out."
+	default:
+		return prefix + ": request failed."
+	}
 }

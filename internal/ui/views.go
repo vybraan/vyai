@@ -11,29 +11,35 @@ func (m UIModel) View() string {
 		return "\n  Initializing..."
 	}
 
+	notice := m.noticeView()
+
 	//Tabirization
 	switch m.activeTab {
 	case 0:
 		if m.loading {
 			loadGap := "\n\n"
 			return fmt.Sprintf(
-				"%s\n%s%s%s\n%s", m.headerView(),
+				"%s\n%s%s%s%s\n%s", m.headerView(),
 				m.viewport.View(),
 				loadGap,
-				m.spinner.View()+" Thinking...\n", m.footerView(),
+				notice,
+				m.spinner.View()+" Thinking...\n",
+				m.footerView(),
 			)
 		}
 
 		return fmt.Sprintf(
-			"%s\n%s%s%s\n%s", m.headerView(),
+			"%s\n%s%s%s%s\n%s", m.headerView(),
 			m.viewport.View(),
 			gap,
-			m.textarea.View(), m.footerView(),
+			m.textarea.View(),
+			notice,
+			m.footerView(),
 		)
 	case 1:
-		return fmt.Sprintf("%s\n%s", m.headerView(), m.theme.DocStyle.Render(m.explore.View()))
+		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.theme.DocStyle.Render(m.explore.View()), notice)
 	default:
-		return fmt.Sprintf("%s\n%s", m.headerView(), "Screwed up ailton \n * "+m.Tabs[m.activeTab]+" Page under development")
+		return fmt.Sprintf("%s\n%s%s", m.headerView(), "Screwed up ailton \n * "+m.Tabs[m.activeTab]+" Page under development", notice)
 
 	}
 }
@@ -114,4 +120,16 @@ func (m UIModel) footerView() string {
 	)
 
 	return bar
+}
+
+func (m UIModel) noticeView() string {
+	if m.notice == "" {
+		return ""
+	}
+
+	return "\n" + lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#F5E6A7")).
+		Background(lipgloss.Color("#5C3B00")).
+		Padding(0, 1).
+		Render(m.notice)
 }

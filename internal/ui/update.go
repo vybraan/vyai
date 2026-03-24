@@ -203,6 +203,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.messages = append(m.messages, string(msg))
 		m.loading = false
+		m.notice = ""
 		m.spinnerIndex = rand.IntN(len(spinners)-1-0) + 0
 		m.resetSpinner()
 		m.renderViewport(strings.Join(m.messages, "\n"))
@@ -216,6 +217,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg
 		m.loading = false
+		m.notice = msg.Error()
 		m.spinnerIndex = rand.IntN(len(spinners) - 1)
 		m.resetSpinner()
 		m.renderViewport(strings.Join(m.messages, ""))
@@ -233,6 +235,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case descriptionUpdatedMsg:
 		m.refreshExploreList()
 		cmds = append(cmds, WaitForDescriptionUpdateCmd(m.gsService))
+	case serviceNoticeMsg:
+		m.notice = string(msg)
+		cmds = append(cmds, WaitForServiceNoticeCmd(m.gsService))
 	}
 	return m, tea.Batch(cmds...)
 }

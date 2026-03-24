@@ -10,9 +10,10 @@ import (
 )
 
 type (
-	errMsg              error
-	statusMsg         string
-	editorMsg         string
+	errMsg                error
+	statusMsg             string
+	editorMsg             string
+	serviceNoticeMsg      string
 	descriptionUpdatedMsg struct {
 		ID          string
 		Description string
@@ -52,6 +53,7 @@ type UIModel struct {
 	spinner      spinner.Model
 	spinnerIndex int
 	loading      bool
+	notice       string
 	Tabs         []string
 	activeTab    int
 	ready        bool
