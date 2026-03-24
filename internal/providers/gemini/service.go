@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -24,6 +25,7 @@ type Notice struct {
 type GeminiService struct {
 	cm                 *ConversationManager
 	cfg                *appconfig.Config
+	store              *FileConversationStore
 	logger             *log.Logger
 	descriptionUpdates chan DescriptionUpdate
 	notices            chan Notice
@@ -33,6 +35,7 @@ func NewGeminiService(cm *ConversationManager, cfg *appconfig.Config) *GeminiSer
 	return &GeminiService{
 		cm:                 cm,
 		cfg:                cfg,
+		store:              NewFileConversationStore(cfg.DataDir),
 		logger:             log.Default(),
 		descriptionUpdates: make(chan DescriptionUpdate, 8),
 		notices:            make(chan Notice, 8),
@@ -70,6 +73,7 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 			}
 
 			conv.SetDescription(desc)
+			gs.persistConversation(conv)
 
 			select {
 			case gs.descriptionUpdates <- DescriptionUpdate{ID: conv.ID, Description: desc}:
@@ -112,8 +116,15 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 	if err != nil {
 		return nil, err
 	}
-	memRepo := NewMemoryHistoryRepository(cs)
-	conversation := gs.cm.StartNewConversation(memRepo)
+	conversation := gs.cm.StartNewConversationWithModel(nil, gs.cfg.ChatModel)
+	memRepo := NewPersistentHistoryRepository(nil, func(ctx context.Context) (*genai.ChatSession, error) {
+		return NewChatSession(ctx, gs.cfg.ChatModel, gs.cfg)
+	}, func(_ []Message) {
+		conversation.Touch()
+		gs.persistConversation(conversation)
+	})
+	memRepo.chatSession = cs
+	conversation.Repo = memRepo
 	return conversation, nil
 }
 
@@ -132,6 +143,7 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 	if err != nil {
 		return "", err
 	}
+	conversation.Touch()
 
 	// Set the first time description and set it to still be able to be updated later
 	if conversation.GetDescription() == "New Conversation..." {
@@ -145,9 +157,17 @@ func (gs *GeminiService) GetAllConversations() ([]utils.Item, error) {
 	var items []utils.Item
 
 	gs.cm.mu.RLock()
+	var conversations []*Conversation
+	for _, conv := range gs.cm.conversations {
+		conversations = append(conversations, conv)
+	}
 	defer gs.cm.mu.RUnlock()
 
-	for _, conv := range gs.cm.conversations {
+	sort.Slice(conversations, func(i, j int) bool {
+		return conversations[i].UpdatedAt.After(conversations[j].UpdatedAt)
+	})
+
+	for _, conv := range conversations {
 		conversationItem := utils.NewItem(conv.ID, conv.GetDescription())
 		items = append(items, conversationItem)
 	}
@@ -209,7 +229,57 @@ func (gs *GeminiService) ReloadConfig() error {
 	}
 
 	gs.cfg = cfg
+	gs.store = NewFileConversationStore(cfg.DataDir)
 	return nil
+}
+
+func (gs *GeminiService) LoadStoredConversations() error {
+	records, err := gs.store.LoadAll()
+	if err != nil {
+		return err
+	}
+
+	for _, record := range records {
+		record := record
+		if record.ChatModel == "" {
+			record.ChatModel = gs.cfg.ChatModel
+		}
+		repo := NewPersistentHistoryRepository(record.Messages, func(ctx context.Context) (*genai.ChatSession, error) {
+			return NewChatSession(ctx, record.ChatModel, gs.cfg)
+		}, nil)
+		conv := NewConversationFromRecord(repo, record)
+		repo.onChange = func(_ []Message) {
+			conv.Touch()
+			gs.persistConversation(conv)
+		}
+		gs.cm.AddConversation(conv)
+	}
+
+	return nil
+}
+
+func (gs *GeminiService) persistConversation(conv *Conversation) {
+	if conv == nil || conv.Repo == nil {
+		return
+	}
+
+	messages, err := conv.Repo.GetMessages()
+	if err != nil && err.Error() != "no messages in history" && err.Error() != "chat session is not initialized" {
+		gs.logger.Warnf("Persist conversation failed: %v", err)
+		return
+	}
+
+	record := ConversationRecord{
+		ID:          conv.ID,
+		Description: conv.GetDescription(),
+		CreatedAt:   conv.CreatedAt,
+		UpdatedAt:   conv.UpdatedAt,
+		ChatModel:   conv.ChatModel,
+		Messages:    messages,
+	}
+	if err := gs.store.Save(record); err != nil {
+		gs.logger.Warnf("Persist conversation failed: %v", err)
+	}
 }
 
 func buildDescriptionPrompt(messages []Message) string {

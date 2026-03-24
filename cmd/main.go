@@ -19,6 +19,9 @@ func main() {
 	cm := gemini.NewConversationManager()
 
 	gsService := gemini.NewGeminiService(cm, cfg)
+	if err := gsService.LoadStoredConversations(); err != nil {
+		log.Fatal(err)
+	}
 
 	workspace, err := os.Getwd()
 	if err != nil {

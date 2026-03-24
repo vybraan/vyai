@@ -18,14 +18,25 @@ func NewConversationManager() *ConversationManager {
 }
 
 func (cm *ConversationManager) StartNewConversation(repo HistoryRepository) *Conversation {
+	return cm.StartNewConversationWithModel(repo, "")
+}
+
+func (cm *ConversationManager) StartNewConversationWithModel(repo HistoryRepository, chatModel string) *Conversation {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	conversation := NewConversation(repo)
+	conversation := NewConversation(repo, chatModel)
 	cm.conversations[conversation.ID] = conversation
 
 	cm.active = conversation
 	return conversation
+}
+
+func (cm *ConversationManager) AddConversation(conversation *Conversation) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	cm.conversations[conversation.ID] = conversation
 }
 
 func (cm *ConversationManager) SwitchConversation(id string) error {
