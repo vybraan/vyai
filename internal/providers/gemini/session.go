@@ -7,12 +7,12 @@ import (
 	"os"
 
 	"github.com/google/generative-ai-go/genai"
-	"github.com/vybraan/vyai/internal/utils"
+	"github.com/vybraan/vyai/internal/appconfig"
 	"google.golang.org/api/option"
 )
 
 // NewChatSession initializes a new ChatSession with proper error handling
-func NewChatSession(c context.Context, modelID string) (*genai.ChatSession, error) {
+func NewChatSession(c context.Context, modelID string, cfg *appconfig.Config) (*genai.ChatSession, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("GOOGLE_API_KEY environment variable is not set")
@@ -29,7 +29,7 @@ func NewChatSession(c context.Context, modelID string) (*genai.ChatSession, erro
 	}
 
 	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(utils.SYSTEM_PROMPT)},
+		Parts: []genai.Part{genai.Text(cfg.SystemPrompt)},
 	}
 
 	cs := model.StartChat()

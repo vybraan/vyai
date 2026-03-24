@@ -151,6 +151,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == 1 {
 				m.refreshExploreList()
 			}
+			if m.activeTab == 2 {
+				m.renderSettings()
+			}
 		case "ctrl+e":
 			if m.activeTab != 0 || m.state != Insert {
 				return m, nil
@@ -252,4 +255,9 @@ func (m *UIModel) refreshExploreList() {
 		m.explore.SetItems(utils.ConvertToItemList(items))
 		m.explore.SetShowTitle(true)
 	}
+}
+
+func (m *UIModel) renderSettings() {
+	settings := renderMarkdown(m.gsService.SettingsMarkdown(), m.width)
+	m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width()).Render(strings.TrimSpace(settings)))
 }

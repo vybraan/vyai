@@ -38,8 +38,10 @@ func (m UIModel) View() string {
 		)
 	case 1:
 		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.theme.DocStyle.Render(m.explore.View()), notice)
+	case 2:
+		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.viewport.View(), notice)
 	default:
-		return fmt.Sprintf("%s\n%s%s", m.headerView(), "Screwed up ailton \n * "+m.Tabs[m.activeTab]+" Page under development", notice)
+		return fmt.Sprintf("%s\n%s%s", m.headerView(), "Unknown tab", notice)
 
 	}
 }
@@ -109,7 +111,7 @@ func (m UIModel) footerView() string {
 
 	modelVal := m.theme.BottomModelTxt.
 		Width(m.viewport.Width() - w(modelKey) - w(status) - w(encoding) - w(viewPortPercent)).
-		Render("gemini-3-flash-preview")
+		Render(m.gsService.Config().ChatModel)
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top,
 		status,

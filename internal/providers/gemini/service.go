@@ -3,10 +3,12 @@ package gemini
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/google/generative-ai-go/genai"
+	"github.com/vybraan/vyai/internal/appconfig"
 	"github.com/vybraan/vyai/internal/utils"
 )
 
@@ -21,14 +23,16 @@ type Notice struct {
 
 type GeminiService struct {
 	cm                 *ConversationManager
+	cfg                *appconfig.Config
 	logger             *log.Logger
 	descriptionUpdates chan DescriptionUpdate
 	notices            chan Notice
 }
 
-func NewGeminiService(cm *ConversationManager) *GeminiService {
+func NewGeminiService(cm *ConversationManager, cfg *appconfig.Config) *GeminiService {
 	return &GeminiService{
 		cm:                 cm,
+		cfg:                cfg,
 		logger:             log.Default(),
 		descriptionUpdates: make(chan DescriptionUpdate, 8),
 		notices:            make(chan Notice, 8),
@@ -53,7 +57,7 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 					gs.logger.Errorf("Recovered from panic in SetConversationDescription goroutine: %v", r)
 				}
 			}()
-			desc, err := utils.GenerateEphemeralMessage(c, buildDescriptionPrompt(messages)+utils.DESCRIPTION_PROMPT)
+			desc, err := utils.GenerateEphemeralMessage(c, gs.cfg.DescriptionModel, buildDescriptionPrompt(messages)+gs.cfg.DescriptionPrompt)
 			if err != nil {
 				notice := summarizeGeminiError("Conversation title was not updated", err)
 				gs.publishNotice(notice)
@@ -104,7 +108,7 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 		gs.cm.active.Close()
 	}
 
-	cs, err := NewChatSession(c, "gemini-3-flash-preview")
+	cs, err := NewChatSession(c, gs.cfg.ChatModel, gs.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +192,14 @@ func (gs *GeminiService) DescriptionUpdates() <-chan DescriptionUpdate {
 
 func (gs *GeminiService) Notices() <-chan Notice {
 	return gs.notices
+}
+
+func (gs *GeminiService) Config() *appconfig.Config {
+	return gs.cfg
+}
+
+func (gs *GeminiService) SettingsMarkdown() string {
+	return utils.FormatSettings(gs.cfg, os.Getenv("GOOGLE_API_KEY") != "")
 }
 
 func buildDescriptionPrompt(messages []Message) string {

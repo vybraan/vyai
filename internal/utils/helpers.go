@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/v2/list"
 	"github.com/google/generative-ai-go/genai"
+	"github.com/vybraan/vyai/internal/appconfig"
 	"google.golang.org/api/option"
 )
 
@@ -19,7 +20,7 @@ func ConvertToItemList(items []Item) []list.Item {
 	return convertedItems
 }
 
-func GenerateEphemeralMessage(c context.Context, message string) (string, error) {
+func GenerateEphemeralMessage(c context.Context, modelName string, message string) (string, error) {
 
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	if apiKey == "" {
@@ -31,7 +32,7 @@ func GenerateEphemeralMessage(c context.Context, message string) (string, error)
 		return "", err
 	}
 
-	model := client.GenerativeModel("gemini-3-flash-preview")
+	model := client.GenerativeModel(modelName)
 	if model == nil {
 		return "", fmt.Errorf("failed to get generative model")
 	}
@@ -42,6 +43,27 @@ func GenerateEphemeralMessage(c context.Context, message string) (string, error)
 	}
 
 	return responseText(result), nil
+}
+
+func FormatSettings(cfg *appconfig.Config, apiKeySet bool) string {
+	apiKeyStatus := "missing"
+	if apiKeySet {
+		apiKeyStatus = "set"
+	}
+
+	return strings.TrimSpace(fmt.Sprintf(`
+# Settings
+
+- App: %s
+- Config dir: %s
+- Config file: %s
+- Data dir: %s
+- Chat model: %s
+- Description model: %s
+- System prompt source: %s
+- Description prompt source: %s
+- GOOGLE_API_KEY: %s
+`, cfg.AppName, cfg.ConfigDir, cfg.ConfigFile, cfg.DataDir, cfg.ChatModel, cfg.DescriptionModel, cfg.SystemPromptSource, cfg.DescriptionSource, apiKeyStatus))
 }
 
 func responseText(resp *genai.GenerateContentResponse) string {
