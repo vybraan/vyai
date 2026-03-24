@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/vybraan/vyai/internal/appconfig"
@@ -19,7 +20,12 @@ func main() {
 
 	gsService := gemini.NewGeminiService(cm, cfg)
 
-	p := tea.NewProgram(ui.NewUIModel(gsService))
+	workspace, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	p := tea.NewProgram(ui.NewUIModel(gsService, workspace))
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}

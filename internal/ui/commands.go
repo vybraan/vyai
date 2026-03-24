@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/spinner"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 	"github.com/vybraan/vyai/internal/utils"
 )
@@ -151,6 +153,9 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			m.viewport.GotoBottom()
 
 			m.loading = true
+			if strings.HasPrefix(strings.TrimSpace(prompt), "/agent") {
+				return m, sendAgentCmd(m, prompt)
+			}
 			return m, sendMessageCmd(m, prompt)
 		}
 	case 1:
@@ -234,6 +239,84 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 			return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
 		}
 	}
+}
+
+func sendAgentCmd(m UIModel, prompt string) tea.Cmd {
+	return func() tea.Msg {
+		userInput := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(prompt), "/agent"))
+		if userInput == "" {
+			return noticeMsg{text: "Usage: /agent <promptweaver-formatted input>", stopLoading: true}
+		}
+
+		agentInput := userInput
+		if !looksLikePromptWeaverInput(userInput) {
+			translated, err := utils.GenerateEphemeralMessage(
+				context.Background(),
+				m.gsService.Config().ChatModel,
+				buildAgentTranslationPrompt(userInput),
+			)
+			if err != nil {
+				return noticeMsg{text: "Agent translation failed: " + summarizeUserError(err), stopLoading: true}
+			}
+
+			agentInput = strings.TrimSpace(translated)
+			if !looksLikePromptWeaverInput(agentInput) {
+				return noticeMsg{text: "Agent translation did not produce a valid tool program.", stopLoading: true}
+			}
+		}
+
+		var output []string
+		engine := agent.NewAgent(func(line string) {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				output = append(output, line)
+			}
+		}, m.workspace)
+
+		if err := engine.Process(strings.NewReader(agentInput)); err != nil {
+			return noticeMsg{text: "Agent request failed: " + summarizeUserError(err), stopLoading: true}
+		}
+
+		if len(output) == 0 {
+			return noticeMsg{text: "Agent completed with no visible output.", stopLoading: true}
+		}
+
+		rendered := renderMarkdown(strings.Join(output, "\n\n"), m.width)
+		return statusMsg(strings.TrimSpace(rendered))
+	}
+}
+
+var promptWeaverTagPattern = regexp.MustCompile(`(?s)<\s*/?\s*([a-zA-Z][a-zA-Z0-9_-]*)`)
+
+func looksLikePromptWeaverInput(input string) bool {
+	return promptWeaverTagPattern.MatchString(input)
+}
+
+func buildAgentTranslationPrompt(userInput string) string {
+	return strings.TrimSpace(fmt.Sprintf(`
+You convert a user's natural-language request into PromptWeaver sections for a local coding agent.
+
+Output rules:
+- Reply with PromptWeaver tags only.
+- Do not use markdown fences.
+- Do not explain what you are doing outside tags.
+- Use only these tags:
+  - <think>hidden reasoning or short plan</think>
+  - <run-bash>safe shell command</run-bash>
+  - <create-file path="...">content</create-file>
+  - <read-file path="..."></read-file>
+  - <list-dir path="..."></list-dir>
+  - <grep-file path="..." pattern="..." include="..."></grep-file>
+  - <glob-file path="..." pattern="..."></glob-file>
+  - <edit-file path="..." old="..." new="..."></edit-file>
+  - <summary>final visible response</summary>
+- Prefer read-only actions unless the user clearly asks to modify files.
+- Always end with exactly one <summary>...</summary>.
+- If the task is unclear or cannot be completed safely, emit only a <summary> explaining what is missing.
+
+User request:
+%s
+`, userInput))
 }
 
 func (m UIModel) Init() tea.Cmd {

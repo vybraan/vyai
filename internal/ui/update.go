@@ -18,7 +18,7 @@ import (
 
 const gap = "\n"
 
-func NewUIModel(gs *gemini.GeminiService) UIModel {
+func NewUIModel(gs *gemini.GeminiService, workspace string) UIModel {
 	theme := NewDefaultTheme()
 
 	ta := textarea.New()
@@ -66,6 +66,7 @@ func NewUIModel(gs *gemini.GeminiService) UIModel {
 		err:       nil,
 		spinner:   s,
 		loading:   false,
+		workspace: workspace,
 		Tabs:      tabs,
 		activeTab: 0,
 	}

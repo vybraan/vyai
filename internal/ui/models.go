@@ -60,6 +60,7 @@ type UIModel struct {
 	spinnerIndex int
 	loading      bool
 	notice       string
+	workspace    string
 	Tabs         []string
 	activeTab    int
 	ready        bool
