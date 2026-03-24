@@ -202,6 +202,16 @@ func (gs *GeminiService) SettingsMarkdown() string {
 	return utils.FormatSettings(gs.cfg, os.Getenv("GOOGLE_API_KEY") != "")
 }
 
+func (gs *GeminiService) ReloadConfig() error {
+	cfg, err := appconfig.Load()
+	if err != nil {
+		return err
+	}
+
+	gs.cfg = cfg
+	return nil
+}
+
 func buildDescriptionPrompt(messages []Message) string {
 	var parts []string
 	for _, message := range messages {

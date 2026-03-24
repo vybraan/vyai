@@ -48,12 +48,18 @@ func NewUIModel(gs *gemini.GeminiService) UIModel {
 	s.Style = theme.SpinnerStyle
 
 	explore := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	settings := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	settings.DisableQuitKeybindings()
+	settings.SetShowStatusBar(false)
+	settings.SetFilteringEnabled(false)
+	settings.Title = "Settings"
 
 	tabs := []string{"Chat", "Explore", "Settings"}
 	return UIModel{
 		theme:     theme,
 		state:     Normal,
 		explore:   explore,
+		settings:  settings,
 		gsService: gs,
 		textarea:  ta,
 		messages:  []string{},
@@ -89,6 +95,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case 1:
 
 		m.explore, exploreCmd = m.explore.Update(msg)
+	case 2:
+
+		m.settings, exploreCmd = m.settings.Update(msg)
 	}
 
 	cmds = append(cmds, textareaCmd, viewportCmd, spinnerCmd, exploreCmd)
@@ -132,6 +141,8 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		h, v := m.theme.DocStyle.GetFrameSize()
 		m.explore.SetSize(msg.Width-h, msg.Height-v-headerHeight)
+		m.settings.SetSize(msg.Width-h, msg.Height-v-headerHeight)
+		m.refreshSettingsList()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -152,7 +163,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refreshExploreList()
 			}
 			if m.activeTab == 2 {
-				m.renderSettings()
+				m.refreshSettingsList()
 			}
 		case "ctrl+e":
 			if m.activeTab != 0 || m.state != Insert {
@@ -227,13 +238,25 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case editorMsg:
 
-		defer os.Remove(string(msg))
-		content, err := os.ReadFile(string(msg))
-		if err != nil {
-			return m, noticeCmd("Editor output could not be read.", false)
+		if !msg.reloadConfig {
+			defer os.Remove(msg.path)
+			content, err := os.ReadFile(msg.path)
+			if err != nil {
+				return m, noticeCmd("Editor output could not be read.", false)
+			}
+
+			m.textarea.SetValue(string(content))
+			break
 		}
 
-		m.textarea.SetValue(string(content))
+		if err := m.gsService.ReloadConfig(); err != nil {
+			return m, noticeCmd("Configuration could not be reloaded: "+summarizeUserError(err), false)
+		}
+		m.refreshSettingsList()
+		m.notice = "Settings reloaded."
+		if m.activeTab == 2 {
+			m.settings.Title = "Settings"
+		}
 
 	case descriptionUpdatedMsg:
 		m.refreshExploreList()
@@ -257,7 +280,8 @@ func (m *UIModel) refreshExploreList() {
 	}
 }
 
-func (m *UIModel) renderSettings() {
-	settings := renderMarkdown(m.gsService.SettingsMarkdown(), m.width)
-	m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width()).Render(strings.TrimSpace(settings)))
+func (m *UIModel) refreshSettingsList() {
+	cfg := m.gsService.Config()
+	m.settings.SetItems(buildSettingsItems(cfg.ChatModel, cfg.DescriptionModel, cfg.ConfigFile, cfg.SystemPromptFile, cfg.DescriptionPromptFile))
+	m.settings.Title = "Settings  Enter: edit selected file"
 }

@@ -64,6 +64,10 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 		return m, noticeCmd("Editor temp file could not be prepared: "+summarizeUserError(err), false)
 	}
 
+	return m.openEditorForPath(tempFile.Name(), false)
+}
+
+func (m *UIModel) openEditorForPath(path string, reloadConfig bool) (*UIModel, tea.Cmd) {
 	editor := os.Getenv("EDITOR")
 
 	knownEditors := [...]string{
@@ -75,11 +79,11 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	}
 
 	for _, cmd := range knownEditors {
-		path, err := exec.LookPath(cmd)
+		pathValue, err := exec.LookPath(cmd)
 		if err != nil {
 			continue
 		}
-		editor = path
+		editor = pathValue
 		break
 	}
 
@@ -87,10 +91,8 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 		return m, noticeCmd(fmt.Sprintf("EDITOR is not set and no fallback editor was found in PATH: %v", knownEditors[1:]), false)
 	}
 
-	var cmd *exec.Cmd
-	cmd = exec.Command(editor, tempFile.Name())
-
-	cmd.Dir = filepath.Dir(tempFile.Name())
+	cmd := exec.Command(editor, path)
+	cmd.Dir = filepath.Dir(path)
 
 	execCmd := tea.ExecProcess(cmd, func(err error) tea.Msg {
 		if err == nil {
@@ -102,8 +104,7 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	return m, tea.Sequence(
 		execCmd,
 		func() tea.Msg {
-
-			return editorMsg(tempFile.Name())
+			return editorMsg{path: path, reloadConfig: reloadConfig}
 		},
 	)
 
@@ -199,6 +200,13 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 		m.resetState()
 
 		return m, nil
+	case 2:
+		item, ok := m.settings.SelectedItem().(settingsItem)
+		if !ok {
+			return m, nil
+		}
+		_, cmd := m.openEditorForPath(item.Path(), true)
+		return m, cmd
 	}
 	return m, nil
 }

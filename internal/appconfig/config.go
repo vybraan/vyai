@@ -99,8 +99,14 @@ func Load() (*Config, error) {
 		DescriptionSource:     "built-in default",
 	}
 
+	if err := bootstrapDefaults(cfg); err != nil {
+		return nil, err
+	}
 	if err := applyFileConfig(cfg); err != nil {
 		return nil, err
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
+		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 	if err := loadPromptFile(&cfg.SystemPrompt, &cfg.SystemPromptSource, cfg.SystemPromptFile); err != nil {
 		return nil, err
@@ -110,6 +116,23 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func bootstrapDefaults(cfg *Config) error {
+	if err := os.MkdirAll(cfg.ConfigDir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	if err := writeFileIfMissing(cfg.ConfigFile, defaultConfigJSON(cfg)); err != nil {
+		return fmt.Errorf("bootstrap config file: %w", err)
+	}
+	if err := writeFileIfMissing(cfg.SystemPromptFile, cfg.SystemPrompt+"\n"); err != nil {
+		return fmt.Errorf("bootstrap system prompt: %w", err)
+	}
+	if err := writeFileIfMissing(cfg.DescriptionPromptFile, cfg.DescriptionPrompt+"\n"); err != nil {
+		return fmt.Errorf("bootstrap description prompt: %w", err)
+	}
+
+	return nil
 }
 
 func applyFileConfig(cfg *Config) error {
@@ -162,6 +185,27 @@ func loadPromptFile(target *string, source *string, path string) error {
 	*target = content
 	*source = path
 	return nil
+}
+
+func writeFileIfMissing(path string, content string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func defaultConfigJSON(cfg *Config) string {
+	return fmt.Sprintf(`{
+  "chat_model": %q,
+  "description_model": %q,
+  "system_prompt_file": %q,
+  "description_prompt_file": %q,
+  "data_dir": %q
+}
+`, cfg.ChatModel, cfg.DescriptionModel, DefaultSystemPromptFileName, DefaultTitlePromptFileName, cfg.DataDir)
 }
 
 func expandPath(path string, baseDir string) string {

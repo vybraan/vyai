@@ -21,6 +21,11 @@ func TestLoadUsesVybrPathsByDefault(t *testing.T) {
 	if cfg.DataDir != filepath.Join(home, ".vybr", "vyai") {
 		t.Fatalf("unexpected data dir: %s", cfg.DataDir)
 	}
+	for _, path := range []string{cfg.ConfigFile, cfg.SystemPromptFile, cfg.DescriptionPromptFile, cfg.DataDir} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected bootstrap path %s to exist: %v", path, err)
+		}
+	}
 }
 
 func TestLoadReadsPromptFilesAndModels(t *testing.T) {

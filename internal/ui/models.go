@@ -14,8 +14,11 @@ type (
 		text        string
 		stopLoading bool
 	}
-	statusMsg             string
-	editorMsg             string
+	statusMsg string
+	editorMsg struct {
+		path         string
+		reloadConfig bool
+	}
 	descriptionUpdatedMsg struct {
 		ID          string
 		Description string
@@ -46,6 +49,7 @@ type UIModel struct {
 	height       int
 	theme        Theme
 	explore      list.Model
+	settings     list.Model
 	state        State
 	viewport     viewport.Model
 	messages     []string

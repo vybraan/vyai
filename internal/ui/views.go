@@ -39,7 +39,7 @@ func (m UIModel) View() string {
 	case 1:
 		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.theme.DocStyle.Render(m.explore.View()), notice)
 	case 2:
-		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.viewport.View(), notice)
+		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.theme.DocStyle.Render(m.settings.View()), notice)
 	default:
 		return fmt.Sprintf("%s\n%s%s", m.headerView(), "Unknown tab", notice)
 
