@@ -10,10 +10,12 @@ import (
 )
 
 type (
-	errMsg                error
+	noticeMsg struct {
+		text        string
+		stopLoading bool
+	}
 	statusMsg             string
 	editorMsg             string
-	serviceNoticeMsg      string
 	descriptionUpdatedMsg struct {
 		ID          string
 		Description string

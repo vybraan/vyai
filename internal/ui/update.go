@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"math/rand/v2"
 	"os"
 	"strconv"
@@ -214,20 +213,21 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		cmds = append(cmds, cmd)
 
-	case errMsg:
-		m.err = msg
-		m.loading = false
-		m.notice = msg.Error()
-		m.spinnerIndex = rand.IntN(len(spinners) - 1)
-		m.resetSpinner()
-		m.renderViewport(strings.Join(m.messages, ""))
-		m.viewport.GotoBottom()
+	case noticeMsg:
+		m.notice = msg.text
+		if msg.stopLoading {
+			m.loading = false
+			m.spinnerIndex = rand.IntN(len(spinners) - 1)
+			m.resetSpinner()
+			m.renderViewport(strings.Join(m.messages, ""))
+			m.viewport.GotoBottom()
+		}
 	case editorMsg:
 
 		defer os.Remove(string(msg))
 		content, err := os.ReadFile(string(msg))
 		if err != nil {
-			return m, func() tea.Msg { return errMsg(fmt.Errorf("Error reading file")) }
+			return m, noticeCmd("Editor output could not be read.", false)
 		}
 
 		m.textarea.SetValue(string(content))
@@ -235,9 +235,6 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case descriptionUpdatedMsg:
 		m.refreshExploreList()
 		cmds = append(cmds, WaitForDescriptionUpdateCmd(m.gsService))
-	case serviceNoticeMsg:
-		m.notice = string(msg)
-		cmds = append(cmds, WaitForServiceNoticeCmd(m.gsService))
 	}
 	return m, tea.Batch(cmds...)
 }

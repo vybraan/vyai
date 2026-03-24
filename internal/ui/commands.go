@@ -30,10 +30,7 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 	err = m.gsService.ClearConversation(context.Background())
 	if err != nil {
-
-		return m, func() tea.Msg {
-			return errMsg(err)
-		}
+		return m, noticeCmd(err.Error(), false)
 	}
 
 	m.messages = []string{}
@@ -47,9 +44,7 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 		m.explore.SetItems(utils.ConvertToItemList(items))
 	} else {
-		return m, func() tea.Msg {
-			return serviceNoticeMsg("Conversation list could not be refreshed.")
-		}
+		return m, noticeCmd("Conversation list could not be refreshed.", false)
 	}
 
 	return m, nil
@@ -61,16 +56,12 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	temp := "vyai-conversation_*.md"
 	tempFile, err := os.CreateTemp("", temp)
 	if err != nil {
-		return m, func() tea.Msg {
-			return errMsg(fmt.Errorf("Editor could not be opened: %s", summarizeUserError(err)))
-		}
+		return m, noticeCmd("Editor could not be opened: "+summarizeUserError(err), false)
 	}
 
 	err = os.WriteFile(tempFile.Name(), []byte(m.textarea.Value()), 0644)
 	if err != nil {
-		return m, func() tea.Msg {
-			return errMsg(fmt.Errorf("Editor temp file could not be prepared: %s", summarizeUserError(err)))
-		}
+		return m, noticeCmd("Editor temp file could not be prepared: "+summarizeUserError(err), false)
 	}
 
 	editor := os.Getenv("EDITOR")
@@ -93,9 +84,7 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	}
 
 	if editor == "" {
-		return m, func() tea.Msg {
-			return errMsg(fmt.Errorf("env EDITOR not set, nor any %v found in PATH", knownEditors[1:]))
-		}
+		return m, noticeCmd(fmt.Sprintf("EDITOR is not set and no fallback editor was found in PATH: %v", knownEditors[1:]), false)
 	}
 
 	var cmd *exec.Cmd
@@ -107,7 +96,7 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 		if err == nil {
 			return nil
 		}
-		return errMsg(fmt.Errorf("Editor exited with an error: %s", summarizeUserError(err)))
+		return noticeMsg{text: "Editor exited with an error: " + summarizeUserError(err)}
 	})
 
 	return m, tea.Sequence(
@@ -171,21 +160,17 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 		}
 
 		if err := m.gsService.SwitchConversation(context.Background(), i.Title()); err != nil {
-			renderedError := renderMarkdown("# [*] System\n## Error\n * "+err.Error(), m.width)
-			m.renderViewport(strings.TrimSpace(renderedError))
 			m.resetState()
 			m.activeTab = 0
-			return m, nil
+			return m, noticeCmd("Conversation could not be opened: "+summarizeUserError(err), false)
 		}
 		m.messages = []string{}
 
 		conversation, err := m.gsService.GetActiveConversation()
 		if err != nil {
-			renderedError := renderMarkdown("# [*] System\n## Error\n * "+err.Error(), m.width)
-			m.renderViewport(strings.TrimSpace(renderedError))
 			m.resetState()
 			m.activeTab = 0
-			return m, nil
+			return m, noticeCmd("Active conversation could not be loaded: "+summarizeUserError(err), false)
 		}
 
 		messages, err := conversation.Repo.GetMessages()
@@ -194,7 +179,6 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			// No messages in the conversation
 			m.renderViewport("chat is empty")
 			m.resetState()
-
 			m.activeTab = 0
 			return m, nil
 		}
@@ -239,7 +223,7 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 			renderedMessage := renderMarkdown(message, m.width)
 			return statusMsg(strings.TrimSpace(renderedMessage))
 		case err := <-errChan:
-			return errMsg(fmt.Errorf("Request failed: %s", summarizeUserError(err)))
+			return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
 		}
 	}
 }
@@ -307,7 +291,13 @@ func WaitForServiceNoticeCmd(gsService *gemini.GeminiService) tea.Cmd {
 			return nil
 		}
 
-		return serviceNoticeMsg(notice.Message)
+		return noticeMsg{text: notice.Message}
+	}
+}
+
+func noticeCmd(text string, stopLoading bool) tea.Cmd {
+	return func() tea.Msg {
+		return noticeMsg{text: text, stopLoading: stopLoading}
 	}
 }
 
