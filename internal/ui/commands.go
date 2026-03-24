@@ -7,9 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textarea"
@@ -166,10 +164,23 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			return m, nil
 		}
 
-		m.gsService.SwitchConversation(context.Background(), i.Title())
+		if err := m.gsService.SwitchConversation(context.Background(), i.Title()); err != nil {
+			renderedError := renderMarkdown("# [*] System\n## Error\n * "+err.Error(), m.width)
+			m.renderViewport(strings.TrimSpace(renderedError))
+			m.resetState()
+			m.activeTab = 0
+			return m, nil
+		}
 		m.messages = []string{}
 
-		conversation, _ := m.gsService.GetActiveConversation()
+		conversation, err := m.gsService.GetActiveConversation()
+		if err != nil {
+			renderedError := renderMarkdown("# [*] System\n## Error\n * "+err.Error(), m.width)
+			m.renderViewport(strings.TrimSpace(renderedError))
+			m.resetState()
+			m.activeTab = 0
+			return m, nil
+		}
 
 		messages, err := conversation.Repo.GetMessages()
 
@@ -182,26 +193,12 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			return m, nil
 		}
 
-		for _, raw_message := range messages {
-			re := regexp.MustCompile(`(?s)Role:(\w+), Part:(.+)]`)
-			matches := re.FindStringSubmatch(raw_message)
-
-			if len(matches) < 3 {
-				renderedError := renderMarkdown("# [*] System\n## Error\n * could not load conversation history", m.width)
-				m.renderViewport(strings.TrimSpace(renderedError))
-				m.resetState()
-				m.activeTab = 0
-				return m, nil
-			}
-
-			role := matches[1]
-			part := matches[2]
-
-			if role == "user" {
-				message := renderMessage(strings.TrimSpace(part), false)
+		for _, message := range messages {
+			if message.Role == "user" {
+				message := renderMessage(strings.TrimSpace(message.Text), false)
 				m.messages = append(m.messages, message)
 			} else {
-				renderedMessage := renderMarkdown(part, m.width)
+				renderedMessage := renderMarkdown(message.Text, m.width)
 				m.messages = append(m.messages, strings.TrimSpace(renderedMessage))
 			}
 
@@ -248,7 +245,7 @@ func (m UIModel) Init() tea.Cmd {
 		tea.EnableMouseAllMotion,
 		tea.EnableMouseCellMotion,
 		textarea.Blink,
-		tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg { return CheckForDescriptionUpdatesCmd(m.gsService)() }),
+		WaitForDescriptionUpdateCmd(m.gsService),
 	)
 }
 
@@ -279,29 +276,13 @@ func (m *UIModel) resetState() {
 	m.viewport.MouseWheelEnabled = false
 }
 
-func CheckForDescriptionUpdatesCmd(gsService *gemini.GeminiService) tea.Cmd {
+func WaitForDescriptionUpdateCmd(gsService *gemini.GeminiService) tea.Cmd {
 	return func() tea.Msg {
-		conv, err := gsService.GetActiveConversation()
-		if err != nil {
-			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
-				return CheckForDescriptionUpdatesCmd(gsService)()
-			})()
+		update, ok := <-gsService.DescriptionUpdates()
+		if !ok {
+			return nil
 		}
 
-		select {
-		case desc := <-conv.DescriptionChannel:
-			msg := descriptionUpdatedMsg{ID: conv.ID, Description: desc}
-			// return msg and Schedule next check
-			return tea.Batch(
-				func() tea.Msg { return msg },
-				tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
-					return CheckForDescriptionUpdatesCmd(gsService)()
-				}),
-			)()
-		default:
-			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
-				return CheckForDescriptionUpdatesCmd(gsService)()
-			})()
-		}
+		return descriptionUpdatedMsg{ID: update.ID, Description: update.Description}
 	}
 }

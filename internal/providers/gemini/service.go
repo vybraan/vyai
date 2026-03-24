@@ -10,15 +10,22 @@ import (
 	"github.com/vybraan/vyai/internal/utils"
 )
 
+type DescriptionUpdate struct {
+	ID          string
+	Description string
+}
+
 type GeminiService struct {
-	cm     *ConversationManager
-	logger *log.Logger
+	cm                 *ConversationManager
+	logger             *log.Logger
+	descriptionUpdates chan DescriptionUpdate
 }
 
 func NewGeminiService(cm *ConversationManager) *GeminiService {
 	return &GeminiService{
-		cm:     cm,
-		logger: log.Default(),
+		cm:                 cm,
+		logger:             log.Default(),
+		descriptionUpdates: make(chan DescriptionUpdate, 8),
 	}
 }
 
@@ -40,15 +47,22 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 					gs.logger.Errorf("Recovered from panic in SetConversationDescription goroutine: %v", r)
 				}
 			}()
-			desc, err := utils.GenerateEphemeralMessage(c, strings.Join(messages, "\n")+utils.DESCRIPTION_PROMPT)
+			desc, err := utils.GenerateEphemeralMessage(c, buildDescriptionPrompt(messages)+utils.DESCRIPTION_PROMPT)
 			if err != nil {
 				gs.logger.Errorf("Error generating description: %v", err)
 				return
 			}
+			desc = strings.TrimSpace(desc)
+			if desc == "" {
+				return
+			}
+
+			conv.SetDescription(desc)
+
 			select {
-			case conv.DescriptionChannel <- desc:
+			case gs.descriptionUpdates <- DescriptionUpdate{ID: conv.ID, Description: desc}:
 			case <-c.Done():
-				gs.logger.Debugf("Context cancelled, not sending description")
+				gs.logger.Debugf("Context cancelled, not publishing description update")
 				return
 			}
 		}()
@@ -107,16 +121,6 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 		return "", err
 	}
 
-	// Listen for description update
-	select {
-	case desc, ok := <-conversation.DescriptionChannel:
-		if ok && strings.TrimSpace(desc) != "" {
-			conversation.SetDescription(desc)
-			conversation.SetDescriptionLocked(false)
-		}
-	default:
-	}
-
 	// Set the first time description and set it to still be able to be updated later
 	if conversation.GetDescription() == "New Conversation..." {
 		gs.SetConversationDescription(c, false)
@@ -168,4 +172,17 @@ func (gs *GeminiService) GetActiveConversation() (*Conversation, error) {
 		return nil, err
 	}
 	return conversation, nil
+}
+
+func (gs *GeminiService) DescriptionUpdates() <-chan DescriptionUpdate {
+	return gs.descriptionUpdates
+}
+
+func buildDescriptionPrompt(messages []Message) string {
+	var parts []string
+	for _, message := range messages {
+		parts = append(parts, fmt.Sprintf("[%s] %s", message.Role, message.Text))
+	}
+
+	return strings.Join(parts, "\n")
 }

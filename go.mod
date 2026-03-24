@@ -11,7 +11,6 @@ require (
 	github.com/google/generative-ai-go v0.19.0
 	github.com/grahms/promptweaver v0.0.1
 	google.golang.org/api v0.197.0
-	google.golang.org/genai v1.18.0
 )
 
 require (
@@ -44,7 +43,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect

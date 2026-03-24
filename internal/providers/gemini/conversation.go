@@ -10,22 +10,20 @@ import (
 )
 
 type Conversation struct {
-	ID                 string
-	description        string
-	Repo               HistoryRepository
-	descriptionLocked  bool
-	DescriptionChannel chan string
+	ID                string
+	description       string
+	Repo              HistoryRepository
+	descriptionLocked bool
 
 	mu sync.RWMutex
 }
 
 func NewConversation(repo HistoryRepository) *Conversation {
 	c := &Conversation{
-		ID:                 GenerateRandomConversationID(),
-		Repo:               repo,
-		description:        "New Conversation...",
-		descriptionLocked:  false,
-		DescriptionChannel: make(chan string, 1),
+		ID:                GenerateRandomConversationID(),
+		Repo:              repo,
+		description:       "New Conversation...",
+		descriptionLocked: false,
 	}
 	return c
 }

@@ -10,14 +10,19 @@ import (
 	"github.com/google/generative-ai-go/genai"
 )
 
+type Message struct {
+	Role string
+	Text string
+}
+
 type HistoryRepository interface {
 	SendMessage(c context.Context, text genai.Text) (string, error)
-	GetMessages() ([]string, error)
+	GetMessages() ([]Message, error)
 }
 
 type MemoryHistoryRepository struct {
 	chatSession      *genai.ChatSession
-	cachedMessages   []string
+	cachedMessages   []Message
 	needsCacheUpdate bool
 	messageLimit     int
 	mu               sync.RWMutex
@@ -31,7 +36,7 @@ func NewMemoryHistoryRepository(cs *genai.ChatSession) *MemoryHistoryRepository 
 	}
 }
 
-func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
+func (mhr *MemoryHistoryRepository) GetMessages() ([]Message, error) {
 	mhr.mu.RLock()
 	if !mhr.needsCacheUpdate {
 		defer mhr.mu.RUnlock()
@@ -54,11 +59,14 @@ func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
 		return nil, errors.New("no messages in history")
 	}
 
-	var messages []string
+	var messages []Message
 	for _, content := range mhr.chatSession.History {
 		for _, part := range content.Parts {
 			if text, ok := part.(genai.Text); ok {
-				messages = append(messages, fmt.Sprintf("[Role:%s, Part:%s]", content.Role, text))
+				messages = append(messages, Message{
+					Role: content.Role,
+					Text: string(text),
+				})
 			}
 		}
 	}

@@ -232,6 +232,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case descriptionUpdatedMsg:
 		m.refreshExploreList()
+		cmds = append(cmds, WaitForDescriptionUpdateCmd(m.gsService))
 	}
 	return m, tea.Batch(cmds...)
 }
