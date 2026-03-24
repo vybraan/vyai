@@ -9,14 +9,28 @@ import (
 	"strings"
 )
 
-func RunBash(cmd string) (string, error) {
-	c := exec.Command("bash", "-c", cmd)
+func RunBash(cmd, workspace string) (string, error) {
+	args, err := ParseCommand(cmd)
+	if err != nil {
+		return "", err
+	}
+	if !AllowCommand(args) {
+		return "", errors.New("command is not allowed")
+	}
+
+	argv, err := prepareCommandArgs(args, workspace)
+	if err != nil {
+		return "", err
+	}
+
+	c := exec.Command(argv[0], argv[1:]...)
+	c.Dir = workspace
 
 	var out bytes.Buffer
 	c.Stdout = &out
 	c.Stderr = &out
 
-	err := c.Run()
+	err = c.Run()
 	return out.String(), err
 }
 
@@ -41,7 +55,12 @@ func ListDir(path string) (string, error) {
 	return strings.Join(entries, "\n"), nil
 }
 
-func GrepFile(pattern, include, path string) (string, error) {
+func GrepFile(pattern, include, path, workspace string) (string, error) {
+	safePath, err := ResolveWorkspacePath(workspace, path)
+	if err != nil {
+		return "", err
+	}
+
 	args := []string{"--recursive"}
 	if pattern != "" {
 		args = append(args, pattern)
@@ -49,9 +68,7 @@ func GrepFile(pattern, include, path string) (string, error) {
 	if include != "" {
 		args = append(args, "--include", include)
 	}
-	if path != "" {
-		args = append(args, path)
-	}
+	args = append(args, safePath)
 
 	out, err := exec.Command("grep", args...).CombinedOutput()
 	if err != nil {
@@ -60,14 +77,14 @@ func GrepFile(pattern, include, path string) (string, error) {
 	return string(out), nil
 }
 
-func GlobFile(pattern, path string) (string, error) {
-	args := []string{}
-	if path != "" {
-		args = append(args, path)
+func GlobFile(pattern, path, workspace string) (string, error) {
+	safePath, err := ResolveWorkspacePath(workspace, path)
+	if err != nil {
+		return "", err
 	}
 
 	// Use filepath.Glob for simpler globbing
-	matches, err := filepath.Glob(filepath.Join(path, pattern))
+	matches, err := filepath.Glob(filepath.Join(safePath, pattern))
 	if err != nil {
 		return "", err
 	}
@@ -86,4 +103,58 @@ func EditFile(path, oldString, newString string) error {
 	}
 
 	return os.WriteFile(path, []byte(newContent), 0644)
+}
+
+func prepareCommandArgs(args []string, workspace string) ([]string, error) {
+	switch args[0] {
+	case "ls", "cat", "gofmt", "goimports":
+		return rewritePathArgs(args, workspace, args[0] == "cat")
+	case "go":
+		return validateGoArgs(args)
+	default:
+		return nil, errors.New("unsupported command")
+	}
+}
+
+func rewritePathArgs(args []string, workspace string, requirePath bool) ([]string, error) {
+	rewritten := []string{args[0]}
+	pathCount := 0
+
+	for _, arg := range args[1:] {
+		if strings.HasPrefix(arg, "-") {
+			rewritten = append(rewritten, arg)
+			continue
+		}
+
+		pathCount++
+		safePath, err := ResolveWorkspacePath(workspace, arg)
+		if err != nil {
+			return nil, err
+		}
+		rewritten = append(rewritten, safePath)
+	}
+
+	if requirePath && pathCount == 0 {
+		return nil, errors.New("command requires at least one path")
+	}
+
+	if !requirePath && pathCount == 0 {
+		rewritten = append(rewritten, workspace)
+	}
+
+	return rewritten, nil
+}
+
+func validateGoArgs(args []string) ([]string, error) {
+	if len(args) < 2 {
+		return nil, errors.New("go subcommand is required")
+	}
+
+	for _, arg := range args[2:] {
+		if filepath.IsAbs(arg) {
+			return nil, errors.New("absolute paths are not allowed")
+		}
+	}
+
+	return args, nil
 }

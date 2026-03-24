@@ -16,8 +16,7 @@ type Conversation struct {
 	descriptionLocked  bool
 	DescriptionChannel chan string
 
-	once sync.Once
-	mu   sync.RWMutex
+	mu sync.RWMutex
 }
 
 func NewConversation(repo HistoryRepository) *Conversation {
@@ -56,11 +55,10 @@ func (c *Conversation) IsDescriptionLocked() bool {
 }
 
 func (c *Conversation) Close() {
-	c.once.Do(func() {
-		close(c.DescriptionChannel)
-	})
+	// Keep the channel open for the lifetime of the conversation object.
+	// Switching away from a conversation should not turn future receives
+	// into zero-value reads when that conversation becomes active again.
 }
-
 
 func GenerateRandomConversationID() string {
 

@@ -187,8 +187,11 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			matches := re.FindStringSubmatch(raw_message)
 
 			if len(matches) < 3 {
-				log.Fatalf("could not parse input, raw input: %s", raw_message)
-
+				renderedError := renderMarkdown("# [*] System\n## Error\n * could not load conversation history", m.width)
+				m.renderViewport(strings.TrimSpace(renderedError))
+				m.resetState()
+				m.activeTab = 0
+				return m, nil
 			}
 
 			role := matches[1]

@@ -109,9 +109,11 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 
 	// Listen for description update
 	select {
-	case desc := <-conversation.DescriptionChannel:
-		conversation.SetDescription(desc)
-		conversation.SetDescriptionLocked(false)
+	case desc, ok := <-conversation.DescriptionChannel:
+		if ok && strings.TrimSpace(desc) != "" {
+			conversation.SetDescription(desc)
+			conversation.SetDescriptionLocked(false)
+		}
 	default:
 	}
 

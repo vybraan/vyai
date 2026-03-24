@@ -14,12 +14,17 @@ func BuildSink(uiOut func(string), workspace string) *promptweaver.HandlerSink {
 
 	// Shell execution
 	sink.RegisterHandler("run-bash", func(ev promptweaver.SectionEvent) {
-		if !AllowCommand(ev.Content) {
+		args, err := ParseCommand(ev.Content)
+		if err != nil {
+			uiOut("Blocked command: " + err.Error())
+			return
+		}
+		if !AllowCommand(args) {
 			uiOut("Blocked command: " + ev.Content)
 			return
 		}
 
-		out, err := RunBash(ev.Content)
+		out, err := RunBash(ev.Content, workspace)
 		if err != nil {
 			uiOut("Exec error: " + err.Error())
 			return
@@ -76,7 +81,7 @@ func BuildSink(uiOut func(string), workspace string) *promptweaver.HandlerSink {
 
 	// Grep file content
 	sink.RegisterHandler("grep-file", func(ev promptweaver.SectionEvent) {
-		out, err := GrepFile(ev.Attrs["pattern"], ev.Attrs["include"], ev.Attrs["path"])
+		out, err := GrepFile(ev.Attrs["pattern"], ev.Attrs["include"], ev.Attrs["path"], workspace)
 		if err != nil {
 			uiOut("Grep error: " + err.Error())
 			return
@@ -86,7 +91,7 @@ func BuildSink(uiOut func(string), workspace string) *promptweaver.HandlerSink {
 
 	// Glob file paths
 	sink.RegisterHandler("glob-file", func(ev promptweaver.SectionEvent) {
-		out, err := GlobFile(ev.Attrs["pattern"], ev.Attrs["path"])
+		out, err := GlobFile(ev.Attrs["pattern"], ev.Attrs["path"], workspace)
 		if err != nil {
 			uiOut("Glob error: " + err.Error())
 			return
