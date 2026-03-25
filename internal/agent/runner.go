@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -36,7 +37,7 @@ func (r *LocalRunner) Run(ctx context.Context, req RunRequest) (string, error) {
 	}
 
 	agentInput := userInput
-	if !LooksLikePromptWeaverInput(userInput) {
+	if !LooksLikeCompletePromptWeaverProgram(userInput) {
 		if r.translate == nil {
 			return "", fmt.Errorf("agent translation is not configured")
 		}
@@ -47,7 +48,7 @@ func (r *LocalRunner) Run(ctx context.Context, req RunRequest) (string, error) {
 		}
 
 		agentInput = strings.TrimSpace(translated)
-		if !LooksLikePromptWeaverInput(agentInput) {
+		if !LooksLikeCompletePromptWeaverProgram(agentInput) {
 			return "", fmt.Errorf("translation did not produce a valid tool program")
 		}
 	}
@@ -82,26 +83,36 @@ var promptWeaverTags = map[string]struct{}{
 	"summary":     {},
 }
 
-func LooksLikePromptWeaverInput(input string) bool {
-	for _, part := range strings.Split(input, "<") {
-		part = strings.TrimSpace(part)
-		if part == "" {
+var promptWeaverTagPattern = regexp.MustCompile(`(?s)<\s*(/?)\s*([a-zA-Z][a-zA-Z0-9_-]*)\b[^>]*>`)
+
+func LooksLikeCompletePromptWeaverProgram(input string) bool {
+	matches := promptWeaverTagPattern.FindAllStringSubmatch(input, -1)
+	if len(matches) == 0 {
+		return false
+	}
+
+	var stack []string
+	completeSections := 0
+	for _, match := range matches {
+		closing := match[1] == "/"
+		name := match[2]
+		if _, ok := promptWeaverTags[name]; !ok {
+			return false
+		}
+
+		if !closing {
+			stack = append(stack, name)
 			continue
 		}
-		part = strings.TrimPrefix(part, "/")
 
-		end := len(part)
-		for i, r := range part {
-			if r == '>' || r == ' ' || r == '\n' || r == '\r' || r == '\t' {
-				end = i
-				break
-			}
+		if len(stack) == 0 || stack[len(stack)-1] != name {
+			return false
 		}
-		if _, ok := promptWeaverTags[part[:end]]; ok {
-			return true
-		}
+		stack = stack[:len(stack)-1]
+		completeSections++
 	}
-	return false
+
+	return len(stack) == 0 && completeSections > 0
 }
 
 func BuildTranslationPrompt(userInput string) string {

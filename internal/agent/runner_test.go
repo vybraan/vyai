@@ -6,14 +6,17 @@ import (
 	"testing"
 )
 
-func TestLooksLikePromptWeaverInput(t *testing.T) {
+func TestLooksLikeCompletePromptWeaverProgram(t *testing.T) {
 	t.Parallel()
 
-	if !LooksLikePromptWeaverInput("<summary>done</summary>") {
+	if !LooksLikeCompletePromptWeaverProgram("<summary>done</summary>") {
 		t.Fatal("expected PromptWeaver input to be detected")
 	}
-	if LooksLikePromptWeaverInput("list the files in this repo") {
+	if LooksLikeCompletePromptWeaverProgram("list the files in this repo") {
 		t.Fatal("expected plain English input not to be detected")
+	}
+	if LooksLikeCompletePromptWeaverProgram("<summary>done") {
+		t.Fatal("expected incomplete PromptWeaver input not to be detected")
 	}
 }
 

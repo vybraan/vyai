@@ -125,6 +125,10 @@ func GlobFile(pattern, path, workspace string) (string, error) {
 }
 
 func EditFile(path, oldString, newString string) error {
+	if oldString == "" {
+		return errors.New("old string is required")
+	}
+
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return err

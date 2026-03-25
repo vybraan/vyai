@@ -67,7 +67,7 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 					gs.logger.Errorf("Recovered from panic in SetConversationDescription goroutine: %v", r)
 				}
 			}()
-			desc, err := utils.GenerateEphemeralMessage(c, gs.cfg.DescriptionModel, buildDescriptionPrompt(messages)+gs.cfg.DescriptionPrompt)
+			desc, err := utils.GenerateEphemeralMessage(c, gs.cfg.DescriptionModel, buildDescriptionPrompt(messages)+"\n\n"+gs.cfg.DescriptionPrompt)
 			if err != nil {
 				notice := summarizeGeminiError("Conversation title was not updated", err)
 				gs.publishNotice(notice)
@@ -248,10 +248,15 @@ func (gs *GeminiService) LoadStoredConversations() error {
 		if record.ChatModel == "" {
 			record.ChatModel = gs.cfg.ChatModel
 		}
+		var conv *Conversation
 		repo := NewPersistentHistoryRepository(record.Messages, func(ctx context.Context) (interface{ Close() error }, *genai.ChatSession, error) {
-			return NewChatSession(ctx, record.ChatModel, gs.cfg)
+			modelID := record.ChatModel
+			if conv != nil && conv.ChatModel != "" {
+				modelID = conv.ChatModel
+			}
+			return NewChatSession(ctx, modelID, gs.cfg)
 		}, nil)
-		conv := NewConversationFromRecord(repo, record)
+		conv = NewConversationFromRecord(repo, record)
 		repo.onChange = func(_ []Message) {
 			conv.Touch()
 			gs.persistConversation(conv)
@@ -311,9 +316,11 @@ func (gs *GeminiService) RenameConversation(id string, description string) error
 }
 
 func (gs *GeminiService) DeleteConversation(id string) error {
-	if _, err := gs.cm.RemoveConversation(id); err != nil {
+	conversation, err := gs.cm.RemoveConversation(id)
+	if err != nil {
 		return err
 	}
+	conversation.Close()
 	if err := gs.store.Delete(id); err != nil {
 		return err
 	}

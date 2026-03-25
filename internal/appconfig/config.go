@@ -105,8 +105,11 @@ func Load() (*Config, error) {
 	if err := applyFileConfig(cfg); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
+	}
+	if err := os.Chmod(cfg.DataDir, 0700); err != nil {
+		return nil, fmt.Errorf("chmod data dir: %w", err)
 	}
 	if err := loadPromptFile(&cfg.SystemPrompt, &cfg.SystemPromptSource, cfg.SystemPromptFile); err != nil {
 		return nil, err

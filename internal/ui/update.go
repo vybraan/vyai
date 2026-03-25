@@ -77,7 +77,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		textareaCmd tea.Cmd
 		viewportCmd tea.Cmd
-		exploreCmd  tea.Cmd
+		listCmd     tea.Cmd
 		spinnerCmd  tea.Cmd
 		cmds        []tea.Cmd
 	)
@@ -96,13 +96,13 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case 1:
 
-		m.explore, exploreCmd = m.explore.Update(msg)
+		m.explore, listCmd = m.explore.Update(msg)
 	case 2:
 
-		m.settings, exploreCmd = m.settings.Update(msg)
+		m.settings, listCmd = m.settings.Update(msg)
 	}
 
-	cmds = append(cmds, textareaCmd, viewportCmd, spinnerCmd, exploreCmd)
+	cmds = append(cmds, textareaCmd, viewportCmd, spinnerCmd, listCmd)
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
