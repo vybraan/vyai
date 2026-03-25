@@ -249,9 +249,12 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = false
 			m.spinnerIndex = rand.IntN(len(spinners) - 1)
 			m.resetSpinner()
-			m.renderViewport(strings.Join(m.messages, ""))
+			m.renderViewport(strings.Join(m.messages, "\n"))
 			m.viewport.GotoBottom()
 		}
+	case serviceNoticeMsg:
+		m.notice = string(msg)
+		cmds = append(cmds, WaitForServiceNoticeCmd(m.gsService))
 	case editorMsg:
 		if msg.renameConversationID != "" {
 			defer os.Remove(msg.path)
@@ -292,6 +295,8 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case descriptionUpdatedMsg:
 		m.refreshExploreList()
 		cmds = append(cmds, WaitForDescriptionUpdateCmd(m.gsService))
+	case descriptionUpdatesClosedMsg:
+	case serviceNoticesClosedMsg:
 	}
 	return m, tea.Batch(cmds...)
 }

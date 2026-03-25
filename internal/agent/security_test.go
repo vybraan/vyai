@@ -42,6 +42,9 @@ func TestGrepFileRejectsPathEscape(t *testing.T) {
 	if err := os.WriteFile(parentFile, []byte("secret"), 0644); err != nil {
 		t.Fatalf("write parent file: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = os.Remove(parentFile)
+	})
 
 	_, err := GrepFile("secret", "*.txt", "../", workspace)
 	if err == nil {

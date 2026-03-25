@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -53,7 +54,7 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 	if gs.cm.active != nil && gs.cm.active.GetDescription() == "New Conversation..." && !gs.cm.active.IsDescriptionLocked() {
 		messages, err := gs.cm.active.Repo.GetMessages()
 		if err != nil {
-			if err.Error() == "no messages in history" {
+			if errors.Is(err, ErrNoMessagesInHistory) {
 				return nil // No messages yet, expected during initialization
 			}
 			return err
@@ -118,18 +119,13 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 		gs.cm.active.Close()
 	}
 
-	cs, err := NewChatSession(c, gs.cfg.ChatModel, gs.cfg)
-	if err != nil {
-		return nil, err
-	}
 	conversation := gs.cm.StartNewConversationWithModel(nil, gs.cfg.ChatModel)
-	memRepo := NewPersistentHistoryRepository(nil, func(ctx context.Context) (*genai.ChatSession, error) {
+	memRepo := NewPersistentHistoryRepository(nil, func(ctx context.Context) (interface{ Close() error }, *genai.ChatSession, error) {
 		return NewChatSession(ctx, gs.cfg.ChatModel, gs.cfg)
 	}, func(_ []Message) {
 		conversation.Touch()
 		gs.persistConversation(conversation)
 	})
-	memRepo.chatSession = cs
 	conversation.Repo = memRepo
 	return conversation, nil
 }
@@ -171,7 +167,7 @@ func (gs *GeminiService) GetAllConversations() ([]ConversationSummary, error) {
 			ID:          conv.ID,
 			Description: conv.GetDescription(),
 			ChatModel:   conv.ChatModel,
-			UpdatedAt:   conv.UpdatedAt.Format("2006-01-02 15:04"),
+			UpdatedAt:   conv.UpdatedAtSnapshot().Format("2006-01-02 15:04"),
 		})
 	}
 
@@ -252,7 +248,7 @@ func (gs *GeminiService) LoadStoredConversations() error {
 		if record.ChatModel == "" {
 			record.ChatModel = gs.cfg.ChatModel
 		}
-		repo := NewPersistentHistoryRepository(record.Messages, func(ctx context.Context) (*genai.ChatSession, error) {
+		repo := NewPersistentHistoryRepository(record.Messages, func(ctx context.Context) (interface{ Close() error }, *genai.ChatSession, error) {
 			return NewChatSession(ctx, record.ChatModel, gs.cfg)
 		}, nil)
 		conv := NewConversationFromRecord(repo, record)
@@ -272,18 +268,19 @@ func (gs *GeminiService) persistConversation(conv *Conversation) {
 	}
 
 	messages, err := conv.Repo.GetMessages()
-	if err != nil && err.Error() != "no messages in history" && err.Error() != "chat session is not initialized" {
+	if err != nil && !errors.Is(err, ErrNoMessagesInHistory) && !errors.Is(err, ErrSessionNotInitialized) {
 		gs.logger.Warnf("Persist conversation failed: %v", err)
 		return
 	}
 
 	record := ConversationRecord{
-		ID:          conv.ID,
-		Description: conv.GetDescription(),
-		CreatedAt:   conv.CreatedAt,
-		UpdatedAt:   conv.UpdatedAt,
-		ChatModel:   conv.ChatModel,
-		Messages:    messages,
+		ID:                conv.ID,
+		Description:       conv.GetDescription(),
+		DescriptionLocked: conv.IsDescriptionLocked(),
+		CreatedAt:         conv.CreatedAt,
+		UpdatedAt:         conv.UpdatedAtSnapshot(),
+		ChatModel:         conv.ChatModel,
+		Messages:          messages,
 	}
 	if err := gs.store.Save(record); err != nil {
 		gs.logger.Warnf("Persist conversation failed: %v", err)
@@ -314,16 +311,22 @@ func (gs *GeminiService) RenameConversation(id string, description string) error
 }
 
 func (gs *GeminiService) DeleteConversation(id string) error {
-	if err := gs.store.Delete(id); err != nil {
+	if _, err := gs.cm.RemoveConversation(id); err != nil {
 		return err
 	}
-	if _, err := gs.cm.RemoveConversation(id); err != nil {
+	if err := gs.store.Delete(id); err != nil {
 		return err
 	}
 	return nil
 }
 
+const maxDescriptionMessages = 6
+
 func buildDescriptionPrompt(messages []Message) string {
+	if len(messages) > maxDescriptionMessages {
+		messages = messages[:maxDescriptionMessages]
+	}
+
 	var parts []string
 	for _, message := range messages {
 		parts = append(parts, fmt.Sprintf("[%s] %s", message.Role, message.Text))
@@ -349,22 +352,9 @@ func summarizeGeminiError(prefix string, err error) string {
 		return prefix
 	}
 
-	raw := err.Error()
-	lower := strings.ToLower(raw)
-
-	switch {
-	case strings.Contains(lower, "resource_exhausted"),
-		strings.Contains(lower, "quota exceeded"),
-		strings.Contains(lower, "rate limit"),
-		strings.Contains(lower, "error 429"):
-		return prefix + ": Gemini API quota exceeded. Try again shortly."
-	case strings.Contains(lower, "api key"):
-		return prefix + ": GOOGLE_API_KEY is missing or invalid."
-	case strings.Contains(lower, "deadline exceeded"),
-		strings.Contains(lower, "context deadline exceeded"),
-		strings.Contains(lower, "timeout"):
-		return prefix + ": request timed out."
-	default:
-		return prefix + ": request failed."
+	if summary, ok := utils.SummarizeKnownError(err); ok {
+		return prefix + ": " + summary
 	}
+
+	return prefix + ": request failed."
 }

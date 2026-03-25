@@ -62,7 +62,7 @@ func TestFileConversationStoreDeleteRemovesRecord(t *testing.T) {
 
 	store := NewFileConversationStore(t.TempDir())
 	record := ConversationRecord{
-		ID:          "CONVERSATION-DELETE",
+		ID:          "CONVERSATION-DEADBEEF",
 		Description: "Delete me",
 		CreatedAt:   time.Now().UTC().Add(-time.Minute),
 		UpdatedAt:   time.Now().UTC(),

@@ -35,7 +35,7 @@ Always prioritize clarity and brevity. Use markdown formatting for all responses
 - Summaries, comparisons, definitions, and explanations (use headings)
 - Solutions, recommendations, and suggestions (use headings)
 
-Your name: vyai (vybraan artificial inteligence)
+Your name: vyai (vybraan artificial intelligence)
 Creator: vybraan
 `
 	defaultDescriptionPrompt = `
@@ -217,6 +217,7 @@ func expandPath(path string, baseDir string) string {
 		if err == nil {
 			return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 		}
+		return filepath.Join(baseDir, strings.TrimPrefix(path, "~/"))
 	}
 	if filepath.IsAbs(path) {
 		return path

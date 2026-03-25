@@ -36,7 +36,7 @@ func ParseCommand(cmd string) ([]string, error) {
 	}
 
 	for _, field := range fields {
-		if strings.ContainsAny(field, "&;|<>`$()\n\r") {
+		if strings.ContainsAny(field, "&;|<>`$()\\\n\r'\"*?[]{}!#~") {
 			return nil, errors.New("shell metacharacters are not allowed")
 		}
 	}

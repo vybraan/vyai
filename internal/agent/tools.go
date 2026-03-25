@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,42 +57,79 @@ func ListDir(path string) (string, error) {
 }
 
 func GrepFile(pattern, include, path, workspace string) (string, error) {
+	if pattern == "" {
+		return "", errors.New("grep pattern is required")
+	}
+
 	safePath, err := ResolveWorkspacePath(workspace, path)
 	if err != nil {
 		return "", err
 	}
 
 	args := []string{"--recursive"}
-	if pattern != "" {
-		args = append(args, pattern)
-	}
 	if include != "" {
 		args = append(args, "--include", include)
 	}
-	args = append(args, safePath)
+	args = append(args, pattern, safePath)
 
 	out, err := exec.Command("grep", args...).CombinedOutput()
 	if err != nil {
-		return "", err
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }
 
 func GlobFile(pattern, path, workspace string) (string, error) {
+	if pattern == "" {
+		return "", errors.New("glob pattern is required")
+	}
+	if filepath.IsAbs(pattern) {
+		return "", errors.New("absolute patterns are not allowed")
+	}
+
 	safePath, err := ResolveWorkspacePath(workspace, path)
 	if err != nil {
 		return "", err
 	}
 
-	// Use filepath.Glob for simpler globbing
-	matches, err := filepath.Glob(filepath.Join(safePath, pattern))
+	cleanPattern := filepath.Clean(pattern)
+	if cleanPattern == ".." ||
+		strings.HasPrefix(cleanPattern, ".."+string(os.PathSeparator)) ||
+		strings.Contains(cleanPattern, string(os.PathSeparator)+".."+string(os.PathSeparator)) ||
+		strings.HasSuffix(cleanPattern, string(os.PathSeparator)+"..") {
+		return "", errors.New("glob pattern escapes the workspace")
+	}
+
+	globPattern := filepath.Join(safePath, cleanPattern)
+	matches, err := filepath.Glob(globPattern)
 	if err != nil {
 		return "", err
 	}
-	return strings.Join(matches, "\n"), nil
+
+	filtered := make([]string, 0, len(matches))
+	for _, match := range matches {
+		rel, err := filepath.Rel(workspace, match)
+		if err != nil {
+			return "", err
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return "", errors.New("glob match escapes the workspace")
+		}
+		filtered = append(filtered, match)
+	}
+	return strings.Join(filtered, "\n"), nil
 }
 
 func EditFile(path, oldString, newString string) error {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -102,7 +140,7 @@ func EditFile(path, oldString, newString string) error {
 		return errors.New("old string not found or no change")
 	}
 
-	return os.WriteFile(path, []byte(newContent), 0644)
+	return os.WriteFile(path, []byte(newContent), fileInfo.Mode())
 }
 
 func prepareCommandArgs(args []string, workspace string) ([]string, error) {

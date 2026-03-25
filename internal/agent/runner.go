@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -71,10 +70,38 @@ func (r *LocalRunner) Run(ctx context.Context, req RunRequest) (string, error) {
 	return strings.Join(output, "\n\n"), nil
 }
 
-var promptWeaverTagPattern = regexp.MustCompile(`(?s)<\s*/?\s*([a-zA-Z][a-zA-Z0-9_-]*)`)
+var promptWeaverTags = map[string]struct{}{
+	"think":       {},
+	"run-bash":    {},
+	"create-file": {},
+	"read-file":   {},
+	"list-dir":    {},
+	"grep-file":   {},
+	"glob-file":   {},
+	"edit-file":   {},
+	"summary":     {},
+}
 
 func LooksLikePromptWeaverInput(input string) bool {
-	return promptWeaverTagPattern.MatchString(input)
+	for _, part := range strings.Split(input, "<") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		part = strings.TrimPrefix(part, "/")
+
+		end := len(part)
+		for i, r := range part {
+			if r == '>' || r == ' ' || r == '\n' || r == '\r' || r == '\t' {
+				end = i
+				break
+			}
+		}
+		if _, ok := promptWeaverTags[part[:end]]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func BuildTranslationPrompt(userInput string) string {

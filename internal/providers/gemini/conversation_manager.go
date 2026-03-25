@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 )
 
 type ConversationManager struct {
@@ -95,14 +96,29 @@ func (cm *ConversationManager) All() []*Conversation {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	conversations := make([]*Conversation, 0, len(cm.conversations))
+	type conversationSnapshot struct {
+		conversation *Conversation
+		updatedAt    time.Time
+	}
+
+	conversations := make([]conversationSnapshot, 0, len(cm.conversations))
 	for _, conv := range cm.conversations {
-		conversations = append(conversations, conv)
+		conv.mu.RLock()
+		conversations = append(conversations, conversationSnapshot{
+			conversation: conv,
+			updatedAt:    conv.UpdatedAt,
+		})
+		conv.mu.RUnlock()
 	}
 
 	sort.Slice(conversations, func(i, j int) bool {
-		return conversations[i].UpdatedAt.After(conversations[j].UpdatedAt)
+		return conversations[i].updatedAt.After(conversations[j].updatedAt)
 	})
 
-	return conversations
+	sorted := make([]*Conversation, 0, len(conversations))
+	for _, conv := range conversations {
+		sorted = append(sorted, conv.conversation)
+	}
+
+	return sorted
 }

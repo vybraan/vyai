@@ -22,6 +22,12 @@ type Conversation struct {
 	mu sync.RWMutex
 }
 
+func (c *Conversation) UpdatedAtSnapshot() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.UpdatedAt
+}
+
 func NewConversation(repo HistoryRepository, chatModel string) *Conversation {
 	now := time.Now().UTC()
 	c := &Conversation{
@@ -55,7 +61,7 @@ func NewConversationFromRecord(repo HistoryRepository, record ConversationRecord
 		ID:                record.ID,
 		Repo:              repo,
 		description:       description,
-		descriptionLocked: description != "New Conversation...",
+		descriptionLocked: record.DescriptionLocked,
 		ChatModel:         record.ChatModel,
 		CreatedAt:         createdAt,
 		UpdatedAt:         updatedAt,
@@ -94,9 +100,9 @@ func (c *Conversation) IsDescriptionLocked() bool {
 }
 
 func (c *Conversation) Close() {
-	// Keep the channel open for the lifetime of the conversation object.
-	// Switching away from a conversation should not turn future receives
-	// into zero-value reads when that conversation becomes active again.
+	if c.Repo != nil {
+		c.Repo.ResetSession()
+	}
 }
 
 func GenerateRandomConversationID() string {

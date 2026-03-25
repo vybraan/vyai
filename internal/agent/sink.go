@@ -2,6 +2,7 @@ package agent
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/grahms/promptweaver"
 )
@@ -14,16 +15,6 @@ func BuildSink(uiOut func(string), workspace string) *promptweaver.HandlerSink {
 
 	// Shell execution
 	sink.RegisterHandler("run-bash", func(ev promptweaver.SectionEvent) {
-		args, err := ParseCommand(ev.Content)
-		if err != nil {
-			uiOut("Blocked command: " + err.Error())
-			return
-		}
-		if !AllowCommand(args) {
-			uiOut("Blocked command: " + ev.Content)
-			return
-		}
-
 		out, err := RunBash(ev.Content, workspace)
 		if err != nil {
 			uiOut("Exec error: " + err.Error())
@@ -38,6 +29,12 @@ func BuildSink(uiOut func(string), workspace string) *promptweaver.HandlerSink {
 		path, err := SecureJoin(workspace, ev.Attrs["path"])
 		if err != nil {
 			uiOut("File blocked: " + err.Error())
+			return
+		}
+
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			uiOut("Write failed: " + err.Error())
 			return
 		}
 

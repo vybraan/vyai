@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
+	"github.com/vybraan/vyai/internal/utils"
 )
 
 var focusedMessageBorder = lipgloss.Border{
@@ -72,27 +73,9 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 }
 
 func (m *UIModel) openEditorForPath(path string, reloadConfig bool) (*UIModel, tea.Cmd) {
-	editor := os.Getenv("EDITOR")
-
-	knownEditors := [...]string{
-		editor,
-		"vim",
-		"vi",
-		"nano",
-		"ed",
-	}
-
-	for _, cmd := range knownEditors {
-		pathValue, err := exec.LookPath(cmd)
-		if err != nil {
-			continue
-		}
-		editor = pathValue
-		break
-	}
-
-	if editor == "" {
-		return m, noticeCmd(fmt.Sprintf("EDITOR is not set and no fallback editor was found in PATH: %v", knownEditors[1:]), false)
+	editor, err := findEditor()
+	if err != nil {
+		return m, noticeCmd(err.Error(), false)
 	}
 
 	cmd := exec.Command(editor, path)
@@ -124,19 +107,9 @@ func (m *UIModel) openEditorForConversationTitle(id string, title string) (*UIMo
 		return m, noticeCmd("Conversation title temp file could not be prepared: "+summarizeUserError(err), false)
 	}
 
-	editor := os.Getenv("EDITOR")
-	knownEditors := [...]string{editor, "vim", "vi", "nano", "ed"}
-	for _, cmd := range knownEditors {
-		pathValue, err := exec.LookPath(cmd)
-		if err != nil {
-			continue
-		}
-		editor = pathValue
-		break
-	}
-
-	if editor == "" {
-		return m, noticeCmd(fmt.Sprintf("EDITOR is not set and no fallback editor was found in PATH: %v", knownEditors[1:]), false)
+	editor, err := findEditor()
+	if err != nil {
+		return m, noticeCmd(err.Error(), false)
 	}
 
 	cmd := exec.Command(editor, tempFile.Name())
@@ -385,7 +358,7 @@ func WaitForDescriptionUpdateCmd(gsService *gemini.GeminiService) tea.Cmd {
 	return func() tea.Msg {
 		update, ok := <-gsService.DescriptionUpdates()
 		if !ok {
-			return nil
+			return descriptionUpdatesClosedMsg{}
 		}
 
 		return descriptionUpdatedMsg{ID: update.ID, Description: update.Description}
@@ -396,10 +369,10 @@ func WaitForServiceNoticeCmd(gsService *gemini.GeminiService) tea.Cmd {
 	return func() tea.Msg {
 		notice, ok := <-gsService.Notices()
 		if !ok {
-			return nil
+			return serviceNoticesClosedMsg{}
 		}
 
-		return noticeMsg{text: notice.Message}
+		return serviceNoticeMsg(notice.Message)
 	}
 }
 
@@ -414,22 +387,27 @@ func summarizeUserError(err error) string {
 		return "unknown error"
 	}
 
-	msg := strings.TrimSpace(err.Error())
-	lower := strings.ToLower(msg)
-
-	switch {
-	case strings.Contains(lower, "resource_exhausted"),
-		strings.Contains(lower, "quota exceeded"),
-		strings.Contains(lower, "rate limit"),
-		strings.Contains(lower, "error 429"):
-		return "Gemini API quota exceeded. Try again shortly."
-	case strings.Contains(lower, "api key"):
-		return "GOOGLE_API_KEY is missing or invalid."
-	case strings.Contains(lower, "timeout"),
-		strings.Contains(lower, "deadline exceeded"),
-		strings.Contains(lower, "context deadline exceeded"):
-		return "request timed out."
-	default:
-		return msg
+	if summary, ok := utils.SummarizeKnownError(err); ok {
+		return summary
 	}
+
+	return strings.TrimSpace(err.Error())
+}
+
+func findEditor() (string, error) {
+	editor := os.Getenv("EDITOR")
+	knownEditors := [...]string{editor, "vim", "vi", "nano", "ed"}
+
+	for _, cmd := range knownEditors {
+		if cmd == "" {
+			continue
+		}
+		pathValue, err := exec.LookPath(cmd)
+		if err != nil {
+			continue
+		}
+		return pathValue, nil
+	}
+
+	return "", fmt.Errorf("EDITOR is not set and no fallback editor was found in PATH: %v", knownEditors[1:])
 }

@@ -5,22 +5,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"time"
 )
 
 type ConversationRecord struct {
-	ID          string    `json:"id"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	ChatModel   string    `json:"chat_model"`
-	Messages    []Message `json:"messages"`
+	ID                string    `json:"id"`
+	Description       string    `json:"description"`
+	DescriptionLocked bool      `json:"description_locked"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	ChatModel         string    `json:"chat_model"`
+	Messages          []Message `json:"messages"`
 }
 
 type FileConversationStore struct {
 	dir string
 }
+
+var conversationIDPattern = regexp.MustCompile(`^CONVERSATION-[A-F0-9]+$`)
 
 func NewFileConversationStore(dataDir string) *FileConversationStore {
 	return &FileConversationStore{dir: filepath.Join(dataDir, "conversations")}
@@ -42,7 +46,39 @@ func (s *FileConversationStore) Save(record ConversationRecord) error {
 		return fmt.Errorf("marshal conversation record: %w", err)
 	}
 
-	return os.WriteFile(s.pathFor(record.ID), append(data, '\n'), 0644)
+	path, err := s.pathFor(record.ID)
+	if err != nil {
+		return err
+	}
+
+	tempFile, err := os.CreateTemp(s.dir, ".conversation-*.json")
+	if err != nil {
+		return fmt.Errorf("create temp conversation file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+
+	if _, err := tempFile.Write(append(data, '\n')); err != nil {
+		tempFile.Close()
+		return fmt.Errorf("write temp conversation file: %w", err)
+	}
+	if err := tempFile.Chmod(0644); err != nil {
+		tempFile.Close()
+		return fmt.Errorf("chmod temp conversation file: %w", err)
+	}
+	if err := tempFile.Sync(); err != nil {
+		tempFile.Close()
+		return fmt.Errorf("sync temp conversation file: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("close temp conversation file: %w", err)
+	}
+
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("replace conversation file: %w", err)
+	}
+
+	return nil
 }
 
 func (s *FileConversationStore) LoadAll() ([]ConversationRecord, error) {
@@ -75,8 +111,11 @@ func (s *FileConversationStore) LoadAll() ([]ConversationRecord, error) {
 	return records, nil
 }
 
-func (s *FileConversationStore) pathFor(id string) string {
-	return filepath.Join(s.dir, id+".json")
+func (s *FileConversationStore) pathFor(id string) (string, error) {
+	if err := validateConversationID(id); err != nil {
+		return "", err
+	}
+	return filepath.Join(s.dir, id+".json"), nil
 }
 
 func (s *FileConversationStore) loadFile(path string) (ConversationRecord, error) {
@@ -98,10 +137,20 @@ func (s *FileConversationStore) Delete(id string) error {
 		return err
 	}
 
-	path := s.pathFor(id)
+	path, err := s.pathFor(id)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete conversation file %s: %w", path, err)
 	}
 
+	return nil
+}
+
+func validateConversationID(id string) error {
+	if !conversationIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid conversation ID: %s", id)
+	}
 	return nil
 }

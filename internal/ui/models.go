@@ -24,6 +24,9 @@ type (
 		ID          string
 		Description string
 	}
+	serviceNoticeMsg            string
+	descriptionUpdatesClosedMsg struct{}
+	serviceNoticesClosedMsg     struct{}
 )
 
 type State string
