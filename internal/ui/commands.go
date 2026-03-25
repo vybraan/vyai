@@ -3,19 +3,18 @@ package ui
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"time"
 
+	"github.com/charmbracelet/bubbles/v2/list"
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 	"github.com/vybraan/vyai/internal/utils"
 )
@@ -33,10 +32,7 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 	err = m.gsService.ClearConversation(context.Background())
 	if err != nil {
-
-		return m, func() tea.Msg {
-			return errMsg(err)
-		}
+		return m, noticeCmd(err.Error(), false)
 	}
 
 	m.messages = []string{}
@@ -47,10 +43,13 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 	items, err := m.gsService.GetAllConversations()
 	if err == nil {
-
-		m.explore.SetItems(utils.ConvertToItemList(items))
+		listItems := make([]list.Item, 0, len(items))
+		for _, item := range items {
+			listItems = append(listItems, newConversationListItem(item.ID, item.Description, item.ChatModel, item.UpdatedAt))
+		}
+		m.explore.SetItems(listItems)
 	} else {
-		log.Printf("Error loading conversations: %v", err)
+		return m, noticeCmd("Conversation list could not be refreshed.", false)
 	}
 
 	return m, nil
@@ -62,58 +61,73 @@ func (m *UIModel) openEditorForTextarea() (*UIModel, tea.Cmd) {
 	temp := "vyai-conversation_*.md"
 	tempFile, err := os.CreateTemp("", temp)
 	if err != nil {
-		log.Printf("Error creating temp file: %s", err)
-		return m, nil
+		return m, noticeCmd("Editor could not be opened: "+summarizeUserError(err), false)
 	}
 
 	err = os.WriteFile(tempFile.Name(), []byte(m.textarea.Value()), 0644)
 	if err != nil {
-		log.Printf("Error writing to temp file: %s", err)
-		return m, nil
+		return m, noticeCmd("Editor temp file could not be prepared: "+summarizeUserError(err), false)
 	}
 
-	editor := os.Getenv("EDITOR")
+	return m.openEditorForPath(tempFile.Name(), false)
+}
 
-	knownEditors := [...]string{
-		editor,
-		"vim",
-		"vi",
-		"nano",
-		"ed",
+func (m *UIModel) openEditorForPath(path string, reloadConfig bool) (*UIModel, tea.Cmd) {
+	editor, err := findEditor()
+	if err != nil {
+		return m, noticeCmd(err.Error(), false)
 	}
 
-	for _, cmd := range knownEditors {
-		path, err := exec.LookPath(cmd)
-		if err != nil {
-			continue
-		}
-		editor = path
-		break
-	}
-
-	if editor == "" {
-		return m, func() tea.Msg {
-			return errMsg(fmt.Errorf("env EDITOR not set, nor any %v found in PATH", knownEditors[1:]))
-		}
-	}
-
-	var cmd *exec.Cmd
-	cmd = exec.Command(editor, tempFile.Name())
-
-	cmd.Dir = filepath.Dir(tempFile.Name())
+	cmd := exec.Command(editor, path)
+	cmd.Dir = filepath.Dir(path)
 
 	execCmd := tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return func() tea.Msg { return errMsg(err) }
+		if err == nil {
+			return nil
+		}
+		return noticeMsg{text: "Editor exited with an error: " + summarizeUserError(err)}
 	})
 
 	return m, tea.Sequence(
 		execCmd,
 		func() tea.Msg {
-
-			return editorMsg(tempFile.Name())
+			return editorMsg{path: path, reloadConfig: reloadConfig}
 		},
 	)
 
+}
+
+func (m *UIModel) openEditorForConversationTitle(id string, title string) (*UIModel, tea.Cmd) {
+	tempFile, err := os.CreateTemp("", "vyai-conversation-title_*.txt")
+	if err != nil {
+		return m, noticeCmd("Conversation title editor could not be opened: "+summarizeUserError(err), false)
+	}
+
+	if err := os.WriteFile(tempFile.Name(), []byte(title+"\n"), 0644); err != nil {
+		return m, noticeCmd("Conversation title temp file could not be prepared: "+summarizeUserError(err), false)
+	}
+
+	editor, err := findEditor()
+	if err != nil {
+		return m, noticeCmd(err.Error(), false)
+	}
+
+	cmd := exec.Command(editor, tempFile.Name())
+	cmd.Dir = filepath.Dir(tempFile.Name())
+
+	execCmd := tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if err == nil {
+			return nil
+		}
+		return noticeMsg{text: "Editor exited with an error: " + summarizeUserError(err)}
+	})
+
+	return m, tea.Sequence(
+		execCmd,
+		func() tea.Msg {
+			return editorMsg{path: tempFile.Name(), renameConversationID: id}
+		},
+	)
 }
 
 func renderMessage(message string, focused bool) string {
@@ -157,19 +171,31 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			m.viewport.GotoBottom()
 
 			m.loading = true
+			if strings.HasPrefix(strings.TrimSpace(prompt), "/agent") {
+				return m, sendAgentCmd(m, prompt)
+			}
 			return m, sendMessageCmd(m, prompt)
 		}
 	case 1:
-		i, ok := m.explore.SelectedItem().(utils.Item)
+		i, ok := m.explore.SelectedItem().(conversationListItem)
 		if !ok {
 			// return tea.Quit - in the future a notification
 			return m, nil
 		}
 
-		m.gsService.SwitchConversation(context.Background(), i.Title())
+		if err := m.gsService.SwitchConversation(context.Background(), i.ID()); err != nil {
+			m.resetState()
+			m.activeTab = 0
+			return m, noticeCmd("Conversation could not be opened: "+summarizeUserError(err), false)
+		}
 		m.messages = []string{}
 
-		conversation, _ := m.gsService.GetActiveConversation()
+		conversation, err := m.gsService.GetActiveConversation()
+		if err != nil {
+			m.resetState()
+			m.activeTab = 0
+			return m, noticeCmd("Active conversation could not be loaded: "+summarizeUserError(err), false)
+		}
 
 		messages, err := conversation.Repo.GetMessages()
 
@@ -177,28 +203,16 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			// No messages in the conversation
 			m.renderViewport("chat is empty")
 			m.resetState()
-
 			m.activeTab = 0
 			return m, nil
 		}
 
-		for _, raw_message := range messages {
-			re := regexp.MustCompile(`(?s)Role:(\w+), Part:(.+)]`)
-			matches := re.FindStringSubmatch(raw_message)
-
-			if len(matches) < 3 {
-				log.Fatalf("could not parse input, raw input: %s", raw_message)
-
-			}
-
-			role := matches[1]
-			part := matches[2]
-
-			if role == "user" {
-				message := renderMessage(strings.TrimSpace(part), false)
+		for _, message := range messages {
+			if message.Role == "user" {
+				message := renderMessage(strings.TrimSpace(message.Text), false)
 				m.messages = append(m.messages, message)
 			} else {
-				renderedMessage := renderMarkdown(part, m.width)
+				renderedMessage := renderMarkdown(message.Text, m.width)
 				m.messages = append(m.messages, strings.TrimSpace(renderedMessage))
 			}
 
@@ -209,8 +223,46 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 		m.resetState()
 
 		return m, nil
+	case 2:
+		item, ok := m.settings.SelectedItem().(settingsItem)
+		if !ok {
+			return m, nil
+		}
+		_, cmd := m.openEditorForPath(item.Path(), true)
+		return m, cmd
 	}
 	return m, nil
+}
+
+func (m UIModel) renameSelectedConversation() (UIModel, tea.Cmd) {
+	item, ok := m.explore.SelectedItem().(conversationListItem)
+	if !ok {
+		return m, nil
+	}
+
+	m.deleteTarget = ""
+	_, cmd := m.openEditorForConversationTitle(item.ID(), item.Title())
+	return m, cmd
+}
+
+func (m UIModel) deleteSelectedConversation() (UIModel, tea.Cmd) {
+	item, ok := m.explore.SelectedItem().(conversationListItem)
+	if !ok {
+		return m, nil
+	}
+
+	if m.deleteTarget != item.ID() {
+		m.deleteTarget = item.ID()
+		return m, noticeCmd("Press x again to delete \""+item.Title()+"\".", false)
+	}
+
+	if err := m.gsService.DeleteConversation(item.ID()); err != nil {
+		return m, noticeCmd("Conversation could not be deleted: "+summarizeUserError(err), false)
+	}
+
+	m.deleteTarget = ""
+	m.refreshExploreList()
+	return m, noticeCmd("Conversation deleted.", false)
 }
 
 func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
@@ -233,9 +285,27 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 			renderedMessage := renderMarkdown(message, m.width)
 			return statusMsg(strings.TrimSpace(renderedMessage))
 		case err := <-errChan:
-			renderedError := renderMarkdown("# [*] System\n## Error\n * "+err.Error(), m.width)
-			return errMsg(fmt.Errorf("%v", renderedError))
+			return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
 		}
+	}
+}
+
+func sendAgentCmd(m UIModel, prompt string) tea.Cmd {
+	return func() tea.Msg {
+		userInput := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(prompt), "/agent"))
+		if m.agentRunner == nil {
+			return noticeMsg{text: "Agent runner is not configured.", stopLoading: true}
+		}
+
+		output, err := m.agentRunner.Run(context.Background(), agent.RunRequest{
+			Input: userInput,
+			Model: m.gsService.Config().ChatModel,
+		})
+		if err != nil {
+			return noticeMsg{text: "Agent request failed: " + summarizeUserError(err), stopLoading: true}
+		}
+		rendered := renderMarkdown(output, m.width)
+		return statusMsg(strings.TrimSpace(rendered))
 	}
 }
 
@@ -245,7 +315,8 @@ func (m UIModel) Init() tea.Cmd {
 		tea.EnableMouseAllMotion,
 		tea.EnableMouseCellMotion,
 		textarea.Blink,
-		tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg { return CheckForDescriptionUpdatesCmd(m.gsService)() }),
+		WaitForDescriptionUpdateCmd(m.gsService),
+		WaitForServiceNoticeCmd(m.gsService),
 	)
 }
 
@@ -260,11 +331,18 @@ func (m *UIModel) renderViewport(content string) {
 	m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width()).Render(content))
 }
 func renderMarkdown(s string, width int) string {
-	out, _ := glamour.NewTermRenderer(
+	out, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(width), // defaults to 80 - need to expand
 	)
-	renderedMessage, _ := out.Render(strings.TrimSpace(s))
+	if err != nil {
+		return strings.TrimSpace(s)
+	}
+
+	renderedMessage, err := out.Render(strings.TrimSpace(s))
+	if err != nil {
+		return strings.TrimSpace(s)
+	}
 
 	return renderedMessage
 }
@@ -276,29 +354,60 @@ func (m *UIModel) resetState() {
 	m.viewport.MouseWheelEnabled = false
 }
 
-func CheckForDescriptionUpdatesCmd(gsService *gemini.GeminiService) tea.Cmd {
+func WaitForDescriptionUpdateCmd(gsService *gemini.GeminiService) tea.Cmd {
 	return func() tea.Msg {
-		conv, err := gsService.GetActiveConversation()
-		if err != nil {
-			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
-				return CheckForDescriptionUpdatesCmd(gsService)()
-			})()
+		update, ok := <-gsService.DescriptionUpdates()
+		if !ok {
+			return descriptionUpdatesClosedMsg{}
 		}
 
-		select {
-		case desc := <-conv.DescriptionChannel:
-			msg := descriptionUpdatedMsg{ID: conv.ID, Description: desc}
-			// return msg and Schedule next check
-			return tea.Batch(
-				func() tea.Msg { return msg },
-				tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
-					return CheckForDescriptionUpdatesCmd(gsService)()
-				}),
-			)()
-		default:
-			return tea.Tick(time.Millisecond*100, func(time.Time) tea.Msg {
-				return CheckForDescriptionUpdatesCmd(gsService)()
-			})()
-		}
+		return descriptionUpdatedMsg{ID: update.ID, Description: update.Description}
 	}
+}
+
+func WaitForServiceNoticeCmd(gsService *gemini.GeminiService) tea.Cmd {
+	return func() tea.Msg {
+		notice, ok := <-gsService.Notices()
+		if !ok {
+			return serviceNoticesClosedMsg{}
+		}
+
+		return serviceNoticeMsg(notice.Message)
+	}
+}
+
+func noticeCmd(text string, stopLoading bool) tea.Cmd {
+	return func() tea.Msg {
+		return noticeMsg{text: text, stopLoading: stopLoading}
+	}
+}
+
+func summarizeUserError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+
+	if summary, ok := utils.SummarizeKnownError(err); ok {
+		return summary
+	}
+
+	return strings.TrimSpace(err.Error())
+}
+
+func findEditor() (string, error) {
+	editor := os.Getenv("EDITOR")
+	knownEditors := [...]string{editor, "vim", "vi", "nano", "ed"}
+
+	for _, cmd := range knownEditors {
+		if cmd == "" {
+			continue
+		}
+		pathValue, err := exec.LookPath(cmd)
+		if err != nil {
+			continue
+		}
+		return pathValue, nil
+	}
+
+	return "", fmt.Errorf("EDITOR is not set and no fallback editor was found in PATH: %v", knownEditors[1:])
 }

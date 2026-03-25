@@ -2,7 +2,9 @@ package gemini
 
 import (
 	"fmt"
+	"sort"
 	"sync"
+	"time"
 )
 
 type ConversationManager struct {
@@ -18,14 +20,25 @@ func NewConversationManager() *ConversationManager {
 }
 
 func (cm *ConversationManager) StartNewConversation(repo HistoryRepository) *Conversation {
+	return cm.StartNewConversationWithModel(repo, "")
+}
+
+func (cm *ConversationManager) StartNewConversationWithModel(repo HistoryRepository, chatModel string) *Conversation {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	conversation := NewConversation(repo)
+	conversation := NewConversation(repo, chatModel)
 	cm.conversations[conversation.ID] = conversation
 
 	cm.active = conversation
 	return conversation
+}
+
+func (cm *ConversationManager) AddConversation(conversation *Conversation) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	cm.conversations[conversation.ID] = conversation
 }
 
 func (cm *ConversationManager) SwitchConversation(id string) error {
@@ -60,4 +73,52 @@ func (cm *ConversationManager) GetConversationDescription(id string) (string, er
 		return "", fmt.Errorf("no description found for conversation %s", id)
 	}
 	return conversation.GetDescription(), nil
+}
+
+func (cm *ConversationManager) RemoveConversation(id string) (*Conversation, error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	conversation, exists := cm.conversations[id]
+	if !exists {
+		return nil, fmt.Errorf("conversation with ID %s does not exist", id)
+	}
+
+	delete(cm.conversations, id)
+	if cm.active != nil && cm.active.ID == id {
+		cm.active = nil
+	}
+
+	return conversation, nil
+}
+
+func (cm *ConversationManager) All() []*Conversation {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	type conversationSnapshot struct {
+		conversation *Conversation
+		updatedAt    time.Time
+	}
+
+	conversations := make([]conversationSnapshot, 0, len(cm.conversations))
+	for _, conv := range cm.conversations {
+		conv.mu.RLock()
+		conversations = append(conversations, conversationSnapshot{
+			conversation: conv,
+			updatedAt:    conv.UpdatedAt,
+		})
+		conv.mu.RUnlock()
+	}
+
+	sort.Slice(conversations, func(i, j int) bool {
+		return conversations[i].updatedAt.After(conversations[j].updatedAt)
+	})
+
+	sorted := make([]*Conversation, 0, len(conversations))
+	for _, conv := range conversations {
+		sorted = append(sorted, conv.conversation)
+	}
+
+	return sorted
 }

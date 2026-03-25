@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"math/rand/v2"
 	"os"
 	"strconv"
@@ -13,13 +12,13 @@ import (
 	"github.com/charmbracelet/bubbles/v2/viewport"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
-	"github.com/vybraan/vyai/internal/utils"
 )
 
 const gap = "\n"
 
-func NewUIModel(gs *gemini.GeminiService) UIModel {
+func NewUIModel(gs *gemini.GeminiService, workspace string, agentRunner agent.Runner) UIModel {
 	theme := NewDefaultTheme()
 
 	ta := textarea.New()
@@ -49,20 +48,28 @@ func NewUIModel(gs *gemini.GeminiService) UIModel {
 	s.Style = theme.SpinnerStyle
 
 	explore := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	settings := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	settings.DisableQuitKeybindings()
+	settings.SetShowStatusBar(false)
+	settings.SetFilteringEnabled(false)
+	settings.Title = "Settings"
 
 	tabs := []string{"Chat", "Explore", "Settings"}
 	return UIModel{
-		theme:     theme,
-		state:     Normal,
-		explore:   explore,
-		gsService: gs,
-		textarea:  ta,
-		messages:  []string{},
-		err:       nil,
-		spinner:   s,
-		loading:   false,
-		Tabs:      tabs,
-		activeTab: 0,
+		theme:       theme,
+		state:       Normal,
+		explore:     explore,
+		settings:    settings,
+		gsService:   gs,
+		textarea:    ta,
+		messages:    []string{},
+		err:         nil,
+		spinner:     s,
+		loading:     false,
+		workspace:   workspace,
+		agentRunner: agentRunner,
+		Tabs:        tabs,
+		activeTab:   0,
 	}
 }
 
@@ -70,7 +77,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		textareaCmd tea.Cmd
 		viewportCmd tea.Cmd
-		exploreCmd  tea.Cmd
+		listCmd     tea.Cmd
 		spinnerCmd  tea.Cmd
 		cmds        []tea.Cmd
 	)
@@ -89,10 +96,13 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case 1:
 
-		m.explore, exploreCmd = m.explore.Update(msg)
+		m.explore, listCmd = m.explore.Update(msg)
+	case 2:
+
+		m.settings, listCmd = m.settings.Update(msg)
 	}
 
-	cmds = append(cmds, textareaCmd, viewportCmd, spinnerCmd, exploreCmd)
+	cmds = append(cmds, textareaCmd, viewportCmd, spinnerCmd, listCmd)
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -129,10 +139,12 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshExploreList()
 
 		m.explore.DisableQuitKeybindings()
-		m.explore.Title = "vyai conversation list"
+		m.explore.Title = "Conversations  Enter: open  r: rename  x: delete"
 
 		h, v := m.theme.DocStyle.GetFrameSize()
 		m.explore.SetSize(msg.Width-h, msg.Height-v-headerHeight)
+		m.settings.SetSize(msg.Width-h, msg.Height-v-headerHeight)
+		m.refreshSettingsList()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -151,6 +163,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if m.activeTab == 1 {
 				m.refreshExploreList()
+			}
+			if m.activeTab == 2 {
+				m.refreshSettingsList()
 			}
 		case "ctrl+e":
 			if m.activeTab != 0 || m.state != Insert {
@@ -174,6 +189,20 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var enterCmd tea.Cmd
 			m, enterCmd = m.handleKeyEnter()
 			cmds = append(cmds, enterCmd)
+		case "r":
+			if m.activeTab == 1 {
+				var renameCmd tea.Cmd
+				m, renameCmd = m.renameSelectedConversation()
+				cmds = append(cmds, renameCmd)
+				break
+			}
+		case "x":
+			if m.activeTab == 1 {
+				var deleteCmd tea.Cmd
+				m, deleteCmd = m.deleteSelectedConversation()
+				cmds = append(cmds, deleteCmd)
+				break
+			}
 
 		default:
 			switch msg.String() {
@@ -203,6 +232,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.messages = append(m.messages, string(msg))
 		m.loading = false
+		m.notice = ""
 		m.spinnerIndex = rand.IntN(len(spinners)-1-0) + 0
 		m.resetSpinner()
 		m.renderViewport(strings.Join(m.messages, "\n"))
@@ -213,25 +243,60 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		cmds = append(cmds, cmd)
 
-	case errMsg:
-		m.err = msg
-		m.loading = false
-		m.spinnerIndex = rand.IntN(len(spinners) - 1)
-		m.resetSpinner()
-		m.renderViewport(strings.Join(m.messages, ""))
-		m.viewport.GotoBottom()
+	case noticeMsg:
+		m.notice = msg.text
+		if msg.stopLoading {
+			m.loading = false
+			m.spinnerIndex = rand.IntN(len(spinners) - 1)
+			m.resetSpinner()
+			m.renderViewport(strings.Join(m.messages, "\n"))
+			m.viewport.GotoBottom()
+		}
+	case serviceNoticeMsg:
+		m.notice = string(msg)
+		cmds = append(cmds, WaitForServiceNoticeCmd(m.gsService))
 	case editorMsg:
+		if msg.renameConversationID != "" {
+			defer os.Remove(msg.path)
+			content, err := os.ReadFile(msg.path)
+			if err != nil {
+				return m, noticeCmd("Conversation title could not be read.", false)
+			}
 
-		defer os.Remove(string(msg))
-		content, err := os.ReadFile(string(msg))
-		if err != nil {
-			return m, func() tea.Msg { return errMsg(fmt.Errorf("Error reading file")) }
+			title := strings.TrimSpace(string(content))
+			if err := m.gsService.RenameConversation(msg.renameConversationID, title); err != nil {
+				return m, noticeCmd("Conversation title could not be updated: "+summarizeUserError(err), false)
+			}
+			m.refreshExploreList()
+			m.deleteTarget = ""
+			return m, noticeCmd("Conversation renamed.", false)
 		}
 
-		m.textarea.SetValue(string(content))
+		if !msg.reloadConfig {
+			defer os.Remove(msg.path)
+			content, err := os.ReadFile(msg.path)
+			if err != nil {
+				return m, noticeCmd("Editor output could not be read.", false)
+			}
+
+			m.textarea.SetValue(string(content))
+			break
+		}
+
+		if err := m.gsService.ReloadConfig(); err != nil {
+			return m, noticeCmd("Configuration could not be reloaded: "+summarizeUserError(err), false)
+		}
+		m.refreshSettingsList()
+		m.notice = "Settings reloaded."
+		if m.activeTab == 2 {
+			m.settings.Title = "Settings"
+		}
 
 	case descriptionUpdatedMsg:
 		m.refreshExploreList()
+		cmds = append(cmds, WaitForDescriptionUpdateCmd(m.gsService))
+	case descriptionUpdatesClosedMsg:
+	case serviceNoticesClosedMsg:
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -246,7 +311,18 @@ func (m *UIModel) updateViewportStyle() {
 func (m *UIModel) refreshExploreList() {
 	items, err := m.gsService.GetAllConversations()
 	if err == nil {
-		m.explore.SetItems(utils.ConvertToItemList(items))
+		listItems := make([]list.Item, 0, len(items))
+		for _, item := range items {
+			listItems = append(listItems, newConversationListItem(item.ID, item.Description, item.ChatModel, item.UpdatedAt))
+		}
+		m.explore.SetItems(listItems)
 		m.explore.SetShowTitle(true)
+		m.explore.Title = "Conversations  Enter: open  r: rename  x: delete"
 	}
+}
+
+func (m *UIModel) refreshSettingsList() {
+	cfg := m.gsService.Config()
+	m.settings.SetItems(buildSettingsItems(cfg.ChatModel, cfg.DescriptionModel, cfg.ConfigFile, cfg.SystemPromptFile, cfg.DescriptionPromptFile))
+	m.settings.Title = "Settings  Enter: edit selected file"
 }

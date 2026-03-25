@@ -10,16 +10,30 @@ import (
 	"github.com/google/generative-ai-go/genai"
 )
 
+type Message struct {
+	Role string
+	Text string
+}
+
+var (
+	ErrSessionNotInitialized = errors.New("chat session is not initialized")
+	ErrNoMessagesInHistory   = errors.New("no messages in history")
+)
+
 type HistoryRepository interface {
 	SendMessage(c context.Context, text genai.Text) (string, error)
-	GetMessages() ([]string, error)
+	GetMessages() ([]Message, error)
+	ResetSession()
 }
 
 type MemoryHistoryRepository struct {
+	client           interface{ Close() error }
 	chatSession      *genai.ChatSession
-	cachedMessages   []string
+	cachedMessages   []Message
 	needsCacheUpdate bool
 	messageLimit     int
+	sessionFactory   func(context.Context) (interface{ Close() error }, *genai.ChatSession, error)
+	onChange         func([]Message)
 	mu               sync.RWMutex
 }
 
@@ -31,11 +45,21 @@ func NewMemoryHistoryRepository(cs *genai.ChatSession) *MemoryHistoryRepository 
 	}
 }
 
-func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
+func NewPersistentHistoryRepository(messages []Message, sessionFactory func(context.Context) (interface{ Close() error }, *genai.ChatSession, error), onChange func([]Message)) *MemoryHistoryRepository {
+	return &MemoryHistoryRepository{
+		cachedMessages:   append([]Message(nil), messages...),
+		needsCacheUpdate: false,
+		messageLimit:     20,
+		sessionFactory:   sessionFactory,
+		onChange:         onChange,
+	}
+}
+
+func (mhr *MemoryHistoryRepository) GetMessages() ([]Message, error) {
 	mhr.mu.RLock()
 	if !mhr.needsCacheUpdate {
 		defer mhr.mu.RUnlock()
-		return mhr.cachedMessages, nil
+		return append([]Message(nil), mhr.cachedMessages...), nil
 	}
 	mhr.mu.RUnlock()
 
@@ -44,45 +68,60 @@ func (mhr *MemoryHistoryRepository) GetMessages() ([]string, error) {
 
 	// Re-check condition after acquiring write lock to avoid redundant work
 	if !mhr.needsCacheUpdate {
-		return mhr.cachedMessages, nil
+		return append([]Message(nil), mhr.cachedMessages...), nil
 	}
 
 	if mhr.chatSession == nil {
-		return nil, errors.New("chat session is not initialized")
+		if len(mhr.cachedMessages) == 0 {
+			return nil, ErrSessionNotInitialized
+		}
+		return append([]Message(nil), mhr.cachedMessages...), nil
 	}
 	if len(mhr.chatSession.History) == 0 {
-		return nil, errors.New("no messages in history")
+		return nil, ErrNoMessagesInHistory
 	}
 
-	var messages []string
+	var messages []Message
 	for _, content := range mhr.chatSession.History {
 		for _, part := range content.Parts {
 			if text, ok := part.(genai.Text); ok {
-				messages = append(messages, fmt.Sprintf("[Role:%s, Part:%s]", content.Role, text))
+				messages = append(messages, Message{
+					Role: content.Role,
+					Text: string(text),
+				})
 			}
 		}
 	}
 	mhr.cachedMessages = messages
 	mhr.needsCacheUpdate = false
-	return messages, nil
+	return append([]Message(nil), messages...), nil
 }
 
 func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Text) (string, error) {
+	if err := mhr.ensureSession(c); err != nil {
+		return "", err
+	}
+
 	result, err := mhr.chatSession.SendMessage(c, text)
 
 	if err != nil {
-		return "", errors.New("failed to send a message")
+		return "", fmt.Errorf("send message: %w", err)
 	}
 
 	mhr.mu.Lock()
-	mhr.needsCacheUpdate = true // Invalidate cache on new message
-
 	// Prune older messages if the limit is exceeded
 	if len(mhr.chatSession.History) > mhr.messageLimit {
 		mhr.chatSession.History = mhr.chatSession.History[len(mhr.chatSession.History)-mhr.messageLimit:]
 	}
-
+	mhr.cachedMessages = messagesFromHistory(mhr.chatSession.History)
+	mhr.needsCacheUpdate = false
+	snapshot := append([]Message(nil), mhr.cachedMessages...)
+	onChange := mhr.onChange
 	mhr.mu.Unlock()
+
+	if onChange != nil {
+		onChange(snapshot)
+	}
 
 	var response strings.Builder
 
@@ -96,4 +135,66 @@ func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Te
 	finalResponse := response.String()
 	return finalResponse, nil
 
+}
+
+func (mhr *MemoryHistoryRepository) ensureSession(c context.Context) error {
+	mhr.mu.Lock()
+	defer mhr.mu.Unlock()
+
+	if mhr.chatSession != nil {
+		return nil
+	}
+	if mhr.sessionFactory == nil {
+		return ErrSessionNotInitialized
+	}
+
+	client, cs, err := mhr.sessionFactory(c)
+	if err != nil {
+		if client != nil {
+			_ = client.Close()
+		}
+		return err
+	}
+	cs.History = historyFromMessages(mhr.cachedMessages)
+	mhr.client = client
+	mhr.chatSession = cs
+	return nil
+}
+
+func messagesFromHistory(history []*genai.Content) []Message {
+	var messages []Message
+	for _, content := range history {
+		for _, part := range content.Parts {
+			if text, ok := part.(genai.Text); ok {
+				messages = append(messages, Message{
+					Role: content.Role,
+					Text: string(text),
+				})
+			}
+		}
+	}
+	return messages
+}
+
+func historyFromMessages(messages []Message) []*genai.Content {
+	var history []*genai.Content
+	for _, message := range messages {
+		history = append(history, &genai.Content{
+			Role:  message.Role,
+			Parts: []genai.Part{genai.Text(message.Text)},
+		})
+	}
+	return history
+}
+
+func (mhr *MemoryHistoryRepository) ResetSession() {
+	mhr.mu.Lock()
+	defer mhr.mu.Unlock()
+
+	if mhr.client != nil {
+		_ = mhr.client.Close()
+		mhr.client = nil
+	}
+	mhr.chatSession = nil
+	mhr.needsCacheUpdate = false
 }

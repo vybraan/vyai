@@ -5,17 +5,28 @@ import (
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	"github.com/charmbracelet/bubbles/v2/viewport"
+	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 )
 
 type (
-	errMsg              error
-	statusMsg         string
-	editorMsg         string
+	noticeMsg struct {
+		text        string
+		stopLoading bool
+	}
+	statusMsg string
+	editorMsg struct {
+		path                 string
+		reloadConfig         bool
+		renameConversationID string
+	}
 	descriptionUpdatedMsg struct {
 		ID          string
 		Description string
 	}
+	serviceNoticeMsg            string
+	descriptionUpdatesClosedMsg struct{}
+	serviceNoticesClosedMsg     struct{}
 )
 
 type State string
@@ -42,6 +53,7 @@ type UIModel struct {
 	height       int
 	theme        Theme
 	explore      list.Model
+	settings     list.Model
 	state        State
 	viewport     viewport.Model
 	messages     []string
@@ -51,7 +63,11 @@ type UIModel struct {
 	spinner      spinner.Model
 	spinnerIndex int
 	loading      bool
+	notice       string
+	workspace    string
 	Tabs         []string
 	activeTab    int
 	ready        bool
+	agentRunner  agent.Runner
+	deleteTarget string
 }

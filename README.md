@@ -8,7 +8,8 @@ I got tired of using `curl` to make API calls to Gemini just to have an "AI" in 
 ```bash
 export GOOGLE_API_KEY=your_api_key_here
 ```
-3. Install the application
+3. Install the application.
+
 ### Arch Linux
 You can install `vyai` from the AUR using an AUR helper like `yay` or `paru`:
 ```bash
@@ -34,11 +35,14 @@ scoop install vyai
 ### Manually / From Source
 1. Clone the repository:
 ```bash
-3. Run the application using:
+git clone https://github.com/vybraan/vyai.git
+cd vyai
+```
+2. Run the application:
 ```bash
 make run
 ```
-or
+or:
 ```bash
 go run cmd/main.go
 ```
