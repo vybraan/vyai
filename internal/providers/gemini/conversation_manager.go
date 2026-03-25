@@ -12,6 +12,8 @@ type ConversationManager struct {
 	active        *Conversation
 }
 
+// NewConversationManager creates a ConversationManager with an initialized conversations map.
+// The returned manager has no active conversation set.
 func NewConversationManager() *ConversationManager {
 	return &ConversationManager{
 		conversations: make(map[string]*Conversation),

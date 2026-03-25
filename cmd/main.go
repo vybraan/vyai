@@ -12,6 +12,7 @@ import (
 	"github.com/vybraan/vyai/internal/utils"
 )
 
+// main is the program entry point. It loads application configuration, initializes the conversation manager and Gemini service (including loading stored conversations), resolves the current working directory, creates a local agent runner, and starts the Bubble Tea UI program. Initialization failures terminate the process using log.Fatal.
 func main() {
 	cfg, err := appconfig.Load()
 	if err != nil {

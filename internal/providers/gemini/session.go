@@ -11,7 +11,10 @@ import (
 	"google.golang.org/api/option"
 )
 
-// NewChatSession initializes a new ChatSession with proper error handling
+// NewChatSession creates a new genai.ChatSession for the given model ID and config.
+// It initializes the model's system instruction from cfg.SystemPrompt and returns the started chat session.
+// The function returns an error if the GOOGLE_API_KEY environment variable is missing, if the Gemini client
+// cannot be created, if the specified generative model cannot be obtained, or if a chat session cannot be started.
 func NewChatSession(c context.Context, modelID string, cfg *appconfig.Config) (*genai.ChatSession, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	if apiKey == "" {

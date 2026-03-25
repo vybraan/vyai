@@ -12,6 +12,8 @@ type settingsItem struct {
 	path  string
 }
 
+// newSettingsItem creates a settingsItem populated with the given title, description, and path.
+// The resulting item exposes the provided values through its Title, Description, and Path methods.
 func newSettingsItem(title, description, path string) settingsItem {
 	return settingsItem{title: title, desc: description, path: path}
 }
@@ -21,6 +23,11 @@ func (i settingsItem) Description() string { return i.desc }
 func (i settingsItem) FilterValue() string { return i.title + " " + i.desc }
 func (i settingsItem) Path() string        { return i.path }
 
+// buildSettingsItems constructs a slice of settings list items for the settings view.
+// The slice contains three items:
+// - "Application Config": description includes the provided chatModel and uses cfgPath.
+// - "System Prompt": fixed description and uses systemPromptPath.
+// - "Description Prompt": description includes the provided descriptionModel and uses descriptionPromptPath.
 func buildSettingsItems(chatModel, descriptionModel, cfgPath, systemPromptPath, descriptionPromptPath string) []list.Item {
 	return []list.Item{
 		newSettingsItem("Application Config", "Models, paths, and data directory. Active chat model: "+chatModel, cfgPath),
@@ -35,6 +42,8 @@ type conversationListItem struct {
 	desc  string
 }
 
+// newConversationListItem creates a conversationListItem using the provided id and title,
+// and sets its description to the given model followed by the updatedAt string.
 func newConversationListItem(id, title, model, updatedAt string) conversationListItem {
 	description := fmt.Sprintf("%s  %s", model, updatedAt)
 	return conversationListItem{

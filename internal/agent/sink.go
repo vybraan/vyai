@@ -6,6 +6,21 @@ import (
 	"github.com/grahms/promptweaver"
 )
 
+// BuildSink creates and returns a *promptweaver.HandlerSink that registers handlers for agent
+// "sections" and emits results and notifications via the provided uiOut callback.
+// 
+// The returned sink includes handlers for:
+// - "think": no-op (suppresses internal reasoning output).
+// - "run-bash": parses and authorizes a shell command, executes it inside the provided
+//   workspace, and emits command output or error messages.
+// - "create-file", "read-file", "list-dir", "edit-file": filesystem operations restricted to
+//   the given workspace; each emits success messages or error descriptions.
+// - "grep-file", "glob-file": content/path query helpers that run within the workspace and
+//   emit results or errors.
+// - "summary": forwards the section content to uiOut.
+//
+// The workspace argument scopes command execution and all filesystem operations to a single
+// directory tree; uiOut is called with human-readable status, results, or error text.
 func BuildSink(uiOut func(string), workspace string) *promptweaver.HandlerSink {
 	sink := promptweaver.NewHandlerSink()
 

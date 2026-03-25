@@ -157,6 +157,9 @@ func (m *UIModel) openEditorForConversationTitle(id string, title string) (*UIMo
 	)
 }
 
+// renderMessage renders the provided message as a lipgloss-styled string, using a left border to indicate focus.
+// When focused it uses focusedMessageBorder; otherwise it uses a normal border. The rendered output includes left
+// padding and a left border with a fixed foreground color.
 func renderMessage(message string, focused bool) string {
 
 	borderStyle := lipgloss.NormalBorder()
@@ -292,6 +295,9 @@ func (m UIModel) deleteSelectedConversation() (UIModel, tea.Cmd) {
 	return m, noticeCmd("Conversation deleted.", false)
 }
 
+// sendMessageCmd creates a tea.Cmd that sends the provided prompt using the model's Gemini service
+// and converts a successful response into a trimmed, rendered status message.
+// On error it produces a noticeMsg containing a user-friendly summary of the failure and sets stopLoading to true.
 func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		respChan := make(chan string)
@@ -317,6 +323,13 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 	}
 }
 
+// sendAgentCmd executes an agent run using the text from the provided prompt and produces a tea.Cmd that emits the agent's output or a user-facing error message.
+// 
+// The prompt may include a leading "/agent" prefix; that prefix and surrounding whitespace are removed before running the agent.
+// If the model's agentRunner is nil, the command emits a noticeMsg with text "Agent runner is not configured." and stops loading.
+// On agent execution failure the command emits a noticeMsg with text prefixed by "Agent request failed: " and a summarized error.
+// On success the command emits a statusMsg containing the agent output rendered as markdown and trimmed of surrounding whitespace.
+// The agent is invoked using the configured chat model from m.gsService.Config().ChatModel.
 func sendAgentCmd(m UIModel, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		userInput := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(prompt), "/agent"))
@@ -357,6 +370,8 @@ func (m *UIModel) resetSpinner() {
 func (m *UIModel) renderViewport(content string) {
 	m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width()).Render(content))
 }
+// renderMarkdown renders the Markdown string s into terminal-friendly ANSI-styled output using a Glamour renderer configured with automatic styling and word-wrap at the given width.
+// If the renderer cannot be created or rendering fails, it returns s with surrounding whitespace trimmed.
 func renderMarkdown(s string, width int) string {
 	out, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
@@ -381,6 +396,9 @@ func (m *UIModel) resetState() {
 	m.viewport.MouseWheelEnabled = false
 }
 
+// WaitForDescriptionUpdateCmd waits for a single description update from the GeminiService.
+// It reads one value from gsService.DescriptionUpdates(); if the channel is closed it returns nil,
+// otherwise it returns a descriptionUpdatedMsg containing the update's ID and Description.
 func WaitForDescriptionUpdateCmd(gsService *gemini.GeminiService) tea.Cmd {
 	return func() tea.Msg {
 		update, ok := <-gsService.DescriptionUpdates()
@@ -392,6 +410,8 @@ func WaitForDescriptionUpdateCmd(gsService *gemini.GeminiService) tea.Cmd {
 	}
 }
 
+// WaitForServiceNoticeCmd waits for a notice from the Gemini service and emits a noticeMsg containing its message.
+// If the service's Notices channel is closed, it returns nil.
 func WaitForServiceNoticeCmd(gsService *gemini.GeminiService) tea.Cmd {
 	return func() tea.Msg {
 		notice, ok := <-gsService.Notices()
@@ -403,12 +423,18 @@ func WaitForServiceNoticeCmd(gsService *gemini.GeminiService) tea.Cmd {
 	}
 }
 
+// noticeCmd produces a command that emits a noticeMsg containing the provided text and stopLoading flag.
+// The returned command, when executed, sends noticeMsg{text: text, stopLoading: stopLoading}.
 func noticeCmd(text string, stopLoading bool) tea.Cmd {
 	return func() tea.Msg {
 		return noticeMsg{text: text, stopLoading: stopLoading}
 	}
 }
 
+// summarizeUserError returns a concise user-facing message for common error conditions.
+// It maps quota or rate-limit errors to "Gemini API quota exceeded. Try again shortly.",
+// API key-related errors to "GOOGLE_API_KEY is missing or invalid.", timeout or deadline errors
+// to "request timed out.", and otherwise returns the trimmed original error text.
 func summarizeUserError(err error) string {
 	if err == nil {
 		return "unknown error"

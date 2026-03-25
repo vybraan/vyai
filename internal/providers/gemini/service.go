@@ -37,6 +37,8 @@ type GeminiService struct {
 	notices            chan Notice
 }
 
+// NewGeminiService creates a GeminiService using the provided ConversationManager and configuration.
+// It initializes a file-backed conversation store rooted at cfg.DataDir, sets a default logger, and allocates buffered channels (capacity 8) for description updates and user-facing notices.
 func NewGeminiService(cm *ConversationManager, cfg *appconfig.Config) *GeminiService {
 	return &GeminiService{
 		cm:                 cm,
@@ -323,6 +325,8 @@ func (gs *GeminiService) DeleteConversation(id string) error {
 	return nil
 }
 
+// buildDescriptionPrompt converts a slice of Message into a single prompt string.
+// Each message becomes a line in the form "[Role] Text" and lines are joined with "\n".
 func buildDescriptionPrompt(messages []Message) string {
 	var parts []string
 	for _, message := range messages {
@@ -344,6 +348,10 @@ func (gs *GeminiService) publishNotice(message string) {
 	}
 }
 
+// summarizeGeminiError returns prefix unchanged when err is nil. If err is non-nil it appends a short,
+// user-facing message inferred from the error text: quota/exhausted and rate-limit errors yield
+// "Gemini API quota exceeded. Try again shortly.", API key errors yield "GOOGLE_API_KEY is missing or invalid.",
+// timeout/deadline errors yield "request timed out.", and all other errors yield "request failed."
 func summarizeGeminiError(prefix string, err error) string {
 	if err == nil {
 		return prefix

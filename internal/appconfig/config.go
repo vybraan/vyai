@@ -77,6 +77,14 @@ type Config struct {
 	DescriptionSource     string
 }
 
+// Load constructs and returns the resolved application configuration by combining built-in defaults,
+// optional overrides from a config.json, and optional prompt contents from configured prompt files.
+// Load resolves the user's home directory, establishes default config/data/prompt paths under the
+// user's home, ensures required directories and default files exist, applies non-empty overrides from
+// the config file (if present), ensures the data directory exists, and replaces in-memory prompts when
+// prompt files exist and contain non-empty trimmed content (recording the source for each prompt).
+// It returns an error if the home directory cannot be resolved or if any filesystem or JSON read/write
+// operation required during bootstrapping, override application, or prompt loading fails.
 func Load() (*Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -118,6 +126,10 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// bootstrapDefaults ensures the configuration directory exists and that the default
+// config file, system prompt file, and description prompt file are present, creating
+// them with default contents when missing. It returns an error if directory creation
+// or any file write fails (errors include contextual wrapping).
 func bootstrapDefaults(cfg *Config) error {
 	if err := os.MkdirAll(cfg.ConfigDir, 0755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
@@ -135,6 +147,14 @@ func bootstrapDefaults(cfg *Config) error {
 	return nil
 }
 
+// applyFileConfig loads overrides from cfg.ConfigFile and applies any non-empty fields
+// to the provided cfg.
+//
+// If the config file does not exist the function is a no-op. On success it updates
+// ChatModel and DescriptionModel directly; for DataDir, SystemPromptFile and
+// DescriptionPromptFile it expands paths (supporting `~/` and relative paths using
+// cfg.ConfigDir as the base) before assigning. Read and JSON parse errors are
+// returned with context.
 func applyFileConfig(cfg *Config) error {
 	data, err := os.ReadFile(cfg.ConfigFile)
 	if err != nil {
@@ -168,6 +188,9 @@ func applyFileConfig(cfg *Config) error {
 	return nil
 }
 
+// loadPromptFile reads the file at path and, if it exists and contains non-empty trimmed content, sets target to that content and source to the path.
+// If the file does not exist or the trimmed content is empty, target and source are left unchanged.
+// Returns a wrapped error for file read failures other than non-existence.
 func loadPromptFile(target *string, source *string, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -187,6 +210,9 @@ func loadPromptFile(target *string, source *string, path string) error {
 	return nil
 }
 
+// writeFileIfMissing creates the file at path containing content if the file does not already exist.
+// If the file exists, it returns nil without modifying it. It returns any error encountered while
+// checking existence or writing the file.
 func writeFileIfMissing(path string, content string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
@@ -197,6 +223,10 @@ func writeFileIfMissing(path string, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+// defaultConfigJSON generates a JSON-formatted default configuration using cfg's
+// chat model, description model, and data directory; prompt file names use the
+// package default constants. The produced string is suitable for writing to the
+// default config file.
 func defaultConfigJSON(cfg *Config) string {
 	return fmt.Sprintf(`{
   "chat_model": %q,
@@ -208,6 +238,8 @@ func defaultConfigJSON(cfg *Config) string {
 `, cfg.ChatModel, cfg.DescriptionModel, DefaultSystemPromptFileName, DefaultTitlePromptFileName, cfg.DataDir)
 }
 
+// expandPath expands a given path: it replaces a leading "~/" with the user's home directory when available, leaves absolute paths unchanged, and for other non-empty relative paths joins them with baseDir.
+// If the path is empty it is returned unchanged; if home directory lookup fails the "~/" prefix is not expanded.
 func expandPath(path string, baseDir string) string {
 	if path == "" {
 		return path

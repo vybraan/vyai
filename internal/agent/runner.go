@@ -23,6 +23,8 @@ type LocalRunner struct {
 	translate Translator
 }
 
+// NewLocalRunner creates a LocalRunner configured with the given workspace and optional Translator.
+// The returned runner uses workspace for the underlying agent engine and, if non-nil, uses translate to convert natural-language prompts into PromptWeaver-formatted input.
 func NewLocalRunner(workspace string, translate Translator) *LocalRunner {
 	return &LocalRunner{
 		workspace: workspace,
@@ -73,10 +75,16 @@ func (r *LocalRunner) Run(ctx context.Context, req RunRequest) (string, error) {
 
 var promptWeaverTagPattern = regexp.MustCompile(`(?s)<\s*/?\s*([a-zA-Z][a-zA-Z0-9_-]*)`)
 
+// LooksLikePromptWeaverInput reports whether the input contains PromptWeaver-style tags (for example `<tag>` or `</tag>`).
+// It returns true if the string contains a tag-like sequence starting with `<`, optionally `/`, followed by a tag name.
 func LooksLikePromptWeaverInput(input string) bool {
 	return promptWeaverTagPattern.MatchString(input)
 }
 
+// BuildTranslationPrompt builds a strict instruction prompt that directs a translator to convert a natural-language user request into PromptWeaver-formatted tags.
+// The prompt requires the translator to emit only PromptWeaver tags (no markdown fences or explanations outside tags), limits output to an explicit allowlist of tags
+// (<think>, <run-bash>, <create-file path="...">, <read-file path="...">, <list-dir path="...">, <grep-file path="..." pattern="..." include="...">, <glob-file path="..." pattern="...">, <edit-file path="..." old="..." new="...">, and <summary>), prefers read-only actions unless the user explicitly requests modifications, and mandates exactly one final <summary>...</summary> (or only a <summary> describing missing/unsafe/unclear requirements).
+// The user's request is placed after "User request:" and the returned string is trimmed of surrounding whitespace.
 func BuildTranslationPrompt(userInput string) string {
 	return strings.TrimSpace(fmt.Sprintf(`
 You convert a user's natural-language request into PromptWeaver sections for a local coding agent.

@@ -22,6 +22,7 @@ type Conversation struct {
 	mu sync.RWMutex
 }
 
+// initialized to the current UTC time.
 func NewConversation(repo HistoryRepository, chatModel string) *Conversation {
 	now := time.Now().UTC()
 	c := &Conversation{
@@ -36,6 +37,11 @@ func NewConversation(repo HistoryRepository, chatModel string) *Conversation {
 	return c
 }
 
+// NewConversationFromRecord creates a Conversation populated from the given ConversationRecord and repository.
+// It normalizes timestamps and fills missing values: if record.CreatedAt is zero it uses the current UTC time,
+// and if record.UpdatedAt is zero it uses the resolved CreatedAt. If record.Description is empty the conversation's
+// description is set to "New Conversation..." and descriptionLocked is set to false; otherwise descriptionLocked is set to true.
+// ID, Repo, and ChatModel are taken from the provided record and repo.
 func NewConversationFromRecord(repo HistoryRepository, record ConversationRecord) *Conversation {
 	createdAt := record.CreatedAt.UTC()
 	if createdAt.IsZero() {
@@ -99,6 +105,9 @@ func (c *Conversation) Close() {
 	// into zero-value reads when that conversation becomes active again.
 }
 
+// GenerateRandomConversationID generates a new conversation identifier.
+// The identifier is formatted as "CONVERSATION-<HEX>", where <HEX> is an uppercase
+// MD5 hex string derived from three randomly generated integers.
 func GenerateRandomConversationID() string {
 
 	randomString := fmt.Sprintf("%x-%x-%x", rand.Int(), rand.Int(), rand.Int())

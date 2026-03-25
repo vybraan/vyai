@@ -18,6 +18,14 @@ import (
 
 const gap = "\n"
 
+// NewUIModel creates and returns a UIModel configured for the interactive CLI UI.
+// 
+// The returned model is initialized with a default theme, a preconfigured textarea
+// (prompt, placeholder, focus, and sizing), a spinner styled from the theme, and two
+// list components for "Explore" and "Settings". It also sets up the tab names
+// ("Chat", "Explore", "Settings"), sets the active tab to the chat, stores the
+// provided Gemini service, workspace path, and agent runner, and initializes the
+// message buffer and UI state (Normal, not loading).
 func NewUIModel(gs *gemini.GeminiService, workspace string, agentRunner agent.Runner) UIModel {
 	theme := NewDefaultTheme()
 

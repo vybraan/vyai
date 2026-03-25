@@ -2,6 +2,8 @@ package agent
 
 import "github.com/grahms/promptweaver"
 
+// BuildRegistry creates a promptweaver.Registry populated with the standard section plugins used by the agent.
+// The registry includes: "think"; "run-bash" (aliases "exec", "shell"); "create-file" (alias "write-file"); "read-file" (alias "view-file"); "list-dir" (alias "ls"); "grep-file" (alias "search-file"); "glob-file" (alias "find-file"); "edit-file" (alias "update-file"); and "summary".
 func BuildRegistry() *promptweaver.Registry {
 	reg := promptweaver.NewRegistry()
 

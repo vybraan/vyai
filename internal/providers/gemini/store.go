@@ -22,6 +22,9 @@ type FileConversationStore struct {
 	dir string
 }
 
+// NewFileConversationStore constructs a FileConversationStore rooted at the
+// "conversations" subdirectory of the provided dataDir. It does not create the
+// directory on disk; call Ensure before saving or loading records.
 func NewFileConversationStore(dataDir string) *FileConversationStore {
 	return &FileConversationStore{dir: filepath.Join(dataDir, "conversations")}
 }
