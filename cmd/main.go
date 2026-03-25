@@ -5,9 +5,11 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/appconfig"
 	"github.com/vybraan/vyai/internal/providers/gemini"
 	"github.com/vybraan/vyai/internal/ui"
+	"github.com/vybraan/vyai/internal/utils"
 )
 
 func main() {
@@ -28,7 +30,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	p := tea.NewProgram(ui.NewUIModel(gsService, workspace))
+	agentRunner := agent.NewLocalRunner(workspace, utils.GenerateEphemeralMessage)
+
+	p := tea.NewProgram(ui.NewUIModel(gsService, workspace, agentRunner))
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}

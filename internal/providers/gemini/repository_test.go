@@ -53,3 +53,27 @@ func TestBuildDescriptionPromptIncludesRoles(t *testing.T) {
 		t.Fatalf("unexpected prompt: %q", prompt)
 	}
 }
+
+func TestMemoryHistoryRepositoryResetSessionPreservesMessages(t *testing.T) {
+	t.Parallel()
+
+	repo := NewPersistentHistoryRepository([]Message{
+		{Role: "user", Text: "hello"},
+		{Role: "model", Text: "world"},
+	}, nil, nil)
+	repo.chatSession = &genai.ChatSession{}
+
+	repo.ResetSession()
+
+	if repo.chatSession != nil {
+		t.Fatal("expected chat session to be cleared")
+	}
+
+	messages, err := repo.GetMessages()
+	if err != nil {
+		t.Fatalf("GetMessages returned error: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 cached messages, got %d", len(messages))
+	}
+}

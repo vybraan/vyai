@@ -12,13 +12,13 @@ import (
 	"github.com/charmbracelet/bubbles/v2/viewport"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
-	"github.com/vybraan/vyai/internal/utils"
 )
 
 const gap = "\n"
 
-func NewUIModel(gs *gemini.GeminiService, workspace string) UIModel {
+func NewUIModel(gs *gemini.GeminiService, workspace string, agentRunner agent.Runner) UIModel {
 	theme := NewDefaultTheme()
 
 	ta := textarea.New()
@@ -56,19 +56,20 @@ func NewUIModel(gs *gemini.GeminiService, workspace string) UIModel {
 
 	tabs := []string{"Chat", "Explore", "Settings"}
 	return UIModel{
-		theme:     theme,
-		state:     Normal,
-		explore:   explore,
-		settings:  settings,
-		gsService: gs,
-		textarea:  ta,
-		messages:  []string{},
-		err:       nil,
-		spinner:   s,
-		loading:   false,
-		workspace: workspace,
-		Tabs:      tabs,
-		activeTab: 0,
+		theme:       theme,
+		state:       Normal,
+		explore:     explore,
+		settings:    settings,
+		gsService:   gs,
+		textarea:    ta,
+		messages:    []string{},
+		err:         nil,
+		spinner:     s,
+		loading:     false,
+		workspace:   workspace,
+		agentRunner: agentRunner,
+		Tabs:        tabs,
+		activeTab:   0,
 	}
 }
 
@@ -138,7 +139,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshExploreList()
 
 		m.explore.DisableQuitKeybindings()
-		m.explore.Title = "vyai conversation list"
+		m.explore.Title = "Conversations  Enter: open  r: rename  x: delete"
 
 		h, v := m.theme.DocStyle.GetFrameSize()
 		m.explore.SetSize(msg.Width-h, msg.Height-v-headerHeight)
@@ -188,6 +189,20 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var enterCmd tea.Cmd
 			m, enterCmd = m.handleKeyEnter()
 			cmds = append(cmds, enterCmd)
+		case "r":
+			if m.activeTab == 1 {
+				var renameCmd tea.Cmd
+				m, renameCmd = m.renameSelectedConversation()
+				cmds = append(cmds, renameCmd)
+				break
+			}
+		case "x":
+			if m.activeTab == 1 {
+				var deleteCmd tea.Cmd
+				m, deleteCmd = m.deleteSelectedConversation()
+				cmds = append(cmds, deleteCmd)
+				break
+			}
 
 		default:
 			switch msg.String() {
@@ -238,6 +253,21 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 		}
 	case editorMsg:
+		if msg.renameConversationID != "" {
+			defer os.Remove(msg.path)
+			content, err := os.ReadFile(msg.path)
+			if err != nil {
+				return m, noticeCmd("Conversation title could not be read.", false)
+			}
+
+			title := strings.TrimSpace(string(content))
+			if err := m.gsService.RenameConversation(msg.renameConversationID, title); err != nil {
+				return m, noticeCmd("Conversation title could not be updated: "+summarizeUserError(err), false)
+			}
+			m.refreshExploreList()
+			m.deleteTarget = ""
+			return m, noticeCmd("Conversation renamed.", false)
+		}
 
 		if !msg.reloadConfig {
 			defer os.Remove(msg.path)
@@ -276,8 +306,13 @@ func (m *UIModel) updateViewportStyle() {
 func (m *UIModel) refreshExploreList() {
 	items, err := m.gsService.GetAllConversations()
 	if err == nil {
-		m.explore.SetItems(utils.ConvertToItemList(items))
+		listItems := make([]list.Item, 0, len(items))
+		for _, item := range items {
+			listItems = append(listItems, newConversationListItem(item.ID, item.Description, item.ChatModel, item.UpdatedAt))
+		}
+		m.explore.SetItems(listItems)
 		m.explore.SetShowTitle(true)
+		m.explore.Title = "Conversations  Enter: open  r: rename  x: delete"
 	}
 }
 

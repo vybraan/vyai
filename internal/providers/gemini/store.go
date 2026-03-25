@@ -92,3 +92,16 @@ func (s *FileConversationStore) loadFile(path string) (ConversationRecord, error
 
 	return record, nil
 }
+
+func (s *FileConversationStore) Delete(id string) error {
+	if err := s.Ensure(); err != nil {
+		return err
+	}
+
+	path := s.pathFor(id)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete conversation file %s: %w", path, err)
+	}
+
+	return nil
+}

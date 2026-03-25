@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/v2/list"
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -16,7 +16,6 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/vybraan/vyai/internal/agent"
 	"github.com/vybraan/vyai/internal/providers/gemini"
-	"github.com/vybraan/vyai/internal/utils"
 )
 
 var focusedMessageBorder = lipgloss.Border{
@@ -43,8 +42,11 @@ func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 	items, err := m.gsService.GetAllConversations()
 	if err == nil {
-
-		m.explore.SetItems(utils.ConvertToItemList(items))
+		listItems := make([]list.Item, 0, len(items))
+		for _, item := range items {
+			listItems = append(listItems, newConversationListItem(item.ID, item.Description, item.ChatModel, item.UpdatedAt))
+		}
+		m.explore.SetItems(listItems)
 	} else {
 		return m, noticeCmd("Conversation list could not be refreshed.", false)
 	}
@@ -112,6 +114,49 @@ func (m *UIModel) openEditorForPath(path string, reloadConfig bool) (*UIModel, t
 
 }
 
+func (m *UIModel) openEditorForConversationTitle(id string, title string) (*UIModel, tea.Cmd) {
+	tempFile, err := os.CreateTemp("", "vyai-conversation-title_*.txt")
+	if err != nil {
+		return m, noticeCmd("Conversation title editor could not be opened: "+summarizeUserError(err), false)
+	}
+
+	if err := os.WriteFile(tempFile.Name(), []byte(title+"\n"), 0644); err != nil {
+		return m, noticeCmd("Conversation title temp file could not be prepared: "+summarizeUserError(err), false)
+	}
+
+	editor := os.Getenv("EDITOR")
+	knownEditors := [...]string{editor, "vim", "vi", "nano", "ed"}
+	for _, cmd := range knownEditors {
+		pathValue, err := exec.LookPath(cmd)
+		if err != nil {
+			continue
+		}
+		editor = pathValue
+		break
+	}
+
+	if editor == "" {
+		return m, noticeCmd(fmt.Sprintf("EDITOR is not set and no fallback editor was found in PATH: %v", knownEditors[1:]), false)
+	}
+
+	cmd := exec.Command(editor, tempFile.Name())
+	cmd.Dir = filepath.Dir(tempFile.Name())
+
+	execCmd := tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if err == nil {
+			return nil
+		}
+		return noticeMsg{text: "Editor exited with an error: " + summarizeUserError(err)}
+	})
+
+	return m, tea.Sequence(
+		execCmd,
+		func() tea.Msg {
+			return editorMsg{path: tempFile.Name(), renameConversationID: id}
+		},
+	)
+}
+
 func renderMessage(message string, focused bool) string {
 
 	borderStyle := lipgloss.NormalBorder()
@@ -159,13 +204,13 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 			return m, sendMessageCmd(m, prompt)
 		}
 	case 1:
-		i, ok := m.explore.SelectedItem().(utils.Item)
+		i, ok := m.explore.SelectedItem().(conversationListItem)
 		if !ok {
 			// return tea.Quit - in the future a notification
 			return m, nil
 		}
 
-		if err := m.gsService.SwitchConversation(context.Background(), i.Title()); err != nil {
+		if err := m.gsService.SwitchConversation(context.Background(), i.ID()); err != nil {
 			m.resetState()
 			m.activeTab = 0
 			return m, noticeCmd("Conversation could not be opened: "+summarizeUserError(err), false)
@@ -216,6 +261,37 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m UIModel) renameSelectedConversation() (UIModel, tea.Cmd) {
+	item, ok := m.explore.SelectedItem().(conversationListItem)
+	if !ok {
+		return m, nil
+	}
+
+	m.deleteTarget = ""
+	_, cmd := m.openEditorForConversationTitle(item.ID(), item.Title())
+	return m, cmd
+}
+
+func (m UIModel) deleteSelectedConversation() (UIModel, tea.Cmd) {
+	item, ok := m.explore.SelectedItem().(conversationListItem)
+	if !ok {
+		return m, nil
+	}
+
+	if m.deleteTarget != item.ID() {
+		m.deleteTarget = item.ID()
+		return m, noticeCmd("Press x again to delete \""+item.Title()+"\".", false)
+	}
+
+	if err := m.gsService.DeleteConversation(item.ID()); err != nil {
+		return m, noticeCmd("Conversation could not be deleted: "+summarizeUserError(err), false)
+	}
+
+	m.deleteTarget = ""
+	m.refreshExploreList()
+	return m, noticeCmd("Conversation deleted.", false)
+}
+
 func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		respChan := make(chan string)
@@ -244,79 +320,20 @@ func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
 func sendAgentCmd(m UIModel, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		userInput := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(prompt), "/agent"))
-		if userInput == "" {
-			return noticeMsg{text: "Usage: /agent <promptweaver-formatted input>", stopLoading: true}
+		if m.agentRunner == nil {
+			return noticeMsg{text: "Agent runner is not configured.", stopLoading: true}
 		}
 
-		agentInput := userInput
-		if !looksLikePromptWeaverInput(userInput) {
-			translated, err := utils.GenerateEphemeralMessage(
-				context.Background(),
-				m.gsService.Config().ChatModel,
-				buildAgentTranslationPrompt(userInput),
-			)
-			if err != nil {
-				return noticeMsg{text: "Agent translation failed: " + summarizeUserError(err), stopLoading: true}
-			}
-
-			agentInput = strings.TrimSpace(translated)
-			if !looksLikePromptWeaverInput(agentInput) {
-				return noticeMsg{text: "Agent translation did not produce a valid tool program.", stopLoading: true}
-			}
-		}
-
-		var output []string
-		engine := agent.NewAgent(func(line string) {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				output = append(output, line)
-			}
-		}, m.workspace)
-
-		if err := engine.Process(strings.NewReader(agentInput)); err != nil {
+		output, err := m.agentRunner.Run(context.Background(), agent.RunRequest{
+			Input: userInput,
+			Model: m.gsService.Config().ChatModel,
+		})
+		if err != nil {
 			return noticeMsg{text: "Agent request failed: " + summarizeUserError(err), stopLoading: true}
 		}
-
-		if len(output) == 0 {
-			return noticeMsg{text: "Agent completed with no visible output.", stopLoading: true}
-		}
-
-		rendered := renderMarkdown(strings.Join(output, "\n\n"), m.width)
+		rendered := renderMarkdown(output, m.width)
 		return statusMsg(strings.TrimSpace(rendered))
 	}
-}
-
-var promptWeaverTagPattern = regexp.MustCompile(`(?s)<\s*/?\s*([a-zA-Z][a-zA-Z0-9_-]*)`)
-
-func looksLikePromptWeaverInput(input string) bool {
-	return promptWeaverTagPattern.MatchString(input)
-}
-
-func buildAgentTranslationPrompt(userInput string) string {
-	return strings.TrimSpace(fmt.Sprintf(`
-You convert a user's natural-language request into PromptWeaver sections for a local coding agent.
-
-Output rules:
-- Reply with PromptWeaver tags only.
-- Do not use markdown fences.
-- Do not explain what you are doing outside tags.
-- Use only these tags:
-  - <think>hidden reasoning or short plan</think>
-  - <run-bash>safe shell command</run-bash>
-  - <create-file path="...">content</create-file>
-  - <read-file path="..."></read-file>
-  - <list-dir path="..."></list-dir>
-  - <grep-file path="..." pattern="..." include="..."></grep-file>
-  - <glob-file path="..." pattern="..."></glob-file>
-  - <edit-file path="..." old="..." new="..."></edit-file>
-  - <summary>final visible response</summary>
-- Prefer read-only actions unless the user clearly asks to modify files.
-- Always end with exactly one <summary>...</summary>.
-- If the task is unclear or cannot be completed safely, emit only a <summary> explaining what is missing.
-
-User request:
-%s
-`, userInput))
 }
 
 func (m UIModel) Init() tea.Cmd {

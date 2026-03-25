@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -71,4 +72,37 @@ func (cm *ConversationManager) GetConversationDescription(id string) (string, er
 		return "", fmt.Errorf("no description found for conversation %s", id)
 	}
 	return conversation.GetDescription(), nil
+}
+
+func (cm *ConversationManager) RemoveConversation(id string) (*Conversation, error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	conversation, exists := cm.conversations[id]
+	if !exists {
+		return nil, fmt.Errorf("conversation with ID %s does not exist", id)
+	}
+
+	delete(cm.conversations, id)
+	if cm.active != nil && cm.active.ID == id {
+		cm.active = nil
+	}
+
+	return conversation, nil
+}
+
+func (cm *ConversationManager) All() []*Conversation {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	conversations := make([]*Conversation, 0, len(cm.conversations))
+	for _, conv := range cm.conversations {
+		conversations = append(conversations, conv)
+	}
+
+	sort.Slice(conversations, func(i, j int) bool {
+		return conversations[i].UpdatedAt.After(conversations[j].UpdatedAt)
+	})
+
+	return conversations
 }

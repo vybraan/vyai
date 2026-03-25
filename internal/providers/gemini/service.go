@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -20,6 +19,13 @@ type DescriptionUpdate struct {
 
 type Notice struct {
 	Message string
+}
+
+type ConversationSummary struct {
+	ID          string
+	Description string
+	ChatModel   string
+	UpdatedAt   string
 }
 
 type GeminiService struct {
@@ -153,30 +159,23 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 	return result, nil
 }
 
-func (gs *GeminiService) GetAllConversations() ([]utils.Item, error) {
-	var items []utils.Item
-
-	gs.cm.mu.RLock()
-	var conversations []*Conversation
-	for _, conv := range gs.cm.conversations {
-		conversations = append(conversations, conv)
-	}
-	defer gs.cm.mu.RUnlock()
-
-	sort.Slice(conversations, func(i, j int) bool {
-		return conversations[i].UpdatedAt.After(conversations[j].UpdatedAt)
-	})
-
-	for _, conv := range conversations {
-		conversationItem := utils.NewItem(conv.ID, conv.GetDescription())
-		items = append(items, conversationItem)
-	}
-
-	if len(items) == 0 {
+func (gs *GeminiService) GetAllConversations() ([]ConversationSummary, error) {
+	conversations := gs.cm.All()
+	if len(conversations) == 0 {
 		return nil, fmt.Errorf("no conversation yet")
 	}
 
-	return items, nil
+	summaries := make([]ConversationSummary, 0, len(conversations))
+	for _, conv := range conversations {
+		summaries = append(summaries, ConversationSummary{
+			ID:          conv.ID,
+			Description: conv.GetDescription(),
+			ChatModel:   conv.ChatModel,
+			UpdatedAt:   conv.UpdatedAt.Format("2006-01-02 15:04"),
+		})
+	}
+
+	return summaries, nil
 }
 
 func (gs *GeminiService) SwitchConversation(c context.Context, id string) error {
@@ -223,6 +222,8 @@ func (gs *GeminiService) SettingsMarkdown() string {
 }
 
 func (gs *GeminiService) ReloadConfig() error {
+	oldCfg := gs.cfg
+
 	cfg, err := appconfig.Load()
 	if err != nil {
 		return err
@@ -230,6 +231,13 @@ func (gs *GeminiService) ReloadConfig() error {
 
 	gs.cfg = cfg
 	gs.store = NewFileConversationStore(cfg.DataDir)
+	for _, conv := range gs.cm.All() {
+		if conv.ChatModel == oldCfg.ChatModel {
+			conv.ChatModel = cfg.ChatModel
+		}
+		conv.Repo.ResetSession()
+		gs.persistConversation(conv)
+	}
 	return nil
 }
 
@@ -280,6 +288,39 @@ func (gs *GeminiService) persistConversation(conv *Conversation) {
 	if err := gs.store.Save(record); err != nil {
 		gs.logger.Warnf("Persist conversation failed: %v", err)
 	}
+}
+
+func (gs *GeminiService) RenameConversation(id string, description string) error {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return fmt.Errorf("conversation title cannot be empty")
+	}
+
+	var target *Conversation
+	for _, conv := range gs.cm.All() {
+		if conv.ID == id {
+			target = conv
+			break
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("conversation with ID %s does not exist", id)
+	}
+
+	target.SetDescription(description)
+	target.SetDescriptionLocked(true)
+	gs.persistConversation(target)
+	return nil
+}
+
+func (gs *GeminiService) DeleteConversation(id string) error {
+	if err := gs.store.Delete(id); err != nil {
+		return err
+	}
+	if _, err := gs.cm.RemoveConversation(id); err != nil {
+		return err
+	}
+	return nil
 }
 
 func buildDescriptionPrompt(messages []Message) string {

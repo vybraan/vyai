@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/v2/list"
+import (
+	"fmt"
+
+	"github.com/charmbracelet/bubbles/v2/list"
+)
 
 type settingsItem struct {
 	title string
@@ -24,3 +28,23 @@ func buildSettingsItems(chatModel, descriptionModel, cfgPath, systemPromptPath, 
 		newSettingsItem("Description Prompt", "Conversation title generation prompt. Active model: "+descriptionModel, descriptionPromptPath),
 	}
 }
+
+type conversationListItem struct {
+	id    string
+	title string
+	desc  string
+}
+
+func newConversationListItem(id, title, model, updatedAt string) conversationListItem {
+	description := fmt.Sprintf("%s  %s", model, updatedAt)
+	return conversationListItem{
+		id:    id,
+		title: title,
+		desc:  description,
+	}
+}
+
+func (i conversationListItem) Title() string       { return i.title }
+func (i conversationListItem) Description() string { return i.desc }
+func (i conversationListItem) FilterValue() string { return i.title + " " + i.desc + " " + i.id }
+func (i conversationListItem) ID() string          { return i.id }

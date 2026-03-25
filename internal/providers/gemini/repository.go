@@ -18,6 +18,7 @@ type Message struct {
 type HistoryRepository interface {
 	SendMessage(c context.Context, text genai.Text) (string, error)
 	GetMessages() ([]Message, error)
+	ResetSession()
 }
 
 type MemoryHistoryRepository struct {
@@ -174,4 +175,12 @@ func historyFromMessages(messages []Message) []*genai.Content {
 		})
 	}
 	return history
+}
+
+func (mhr *MemoryHistoryRepository) ResetSession() {
+	mhr.mu.Lock()
+	defer mhr.mu.Unlock()
+
+	mhr.chatSession = nil
+	mhr.needsCacheUpdate = false
 }

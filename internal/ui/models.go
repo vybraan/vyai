@@ -16,8 +16,9 @@ type (
 	}
 	statusMsg string
 	editorMsg struct {
-		path         string
-		reloadConfig bool
+		path                 string
+		reloadConfig         bool
+		renameConversationID string
 	}
 	descriptionUpdatedMsg struct {
 		ID          string
@@ -64,5 +65,6 @@ type UIModel struct {
 	Tabs         []string
 	activeTab    int
 	ready        bool
-	agent        *agent.AgentEngine
+	agentRunner  agent.Runner
+	deleteTarget string
 }
