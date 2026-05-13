@@ -24,6 +24,34 @@ var focusedMessageBorder = lipgloss.Border{
 	Left: "▌",
 }
 
+func renderUserMessage(message string) string {
+	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B50FF")).Bold(true).Render("You")
+	content := label + "\n" + message
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#DFDBDD")).
+		PaddingLeft(1).
+		BorderLeft(true).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("#6B50FF"))
+	return style.Render(content)
+}
+
+func renderAssistantMessage(message string, focused bool) string {
+	borderStyle := lipgloss.NormalBorder()
+	if focused {
+		borderStyle = focusedMessageBorder
+	}
+	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#12C78F")).Bold(true).Render("VyAI")
+	content := label + "\n" + message
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#DFDBDD")).
+		PaddingLeft(1).
+		BorderLeft(true).
+		BorderStyle(borderStyle).
+		BorderForeground(lipgloss.Color("#12C78F"))
+	return style.Render(content)
+}
+
 func (m *UIModel) NewConversation() (*UIModel, tea.Cmd) {
 
 	_, err := m.gsService.GetActiveConversation()
@@ -164,7 +192,7 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 		if m.state == Insert {
 			prompt := m.textarea.Value()
 
-			message := renderMessage(strings.TrimSpace(prompt), false)
+			message := renderUserMessage(strings.TrimSpace(prompt))
 
 			m.messages = append(m.messages, message)
 			m.renderViewport(strings.Join(m.messages, "\n"))
@@ -210,11 +238,12 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 
 		for _, message := range messages {
 			if message.Role == "user" {
-				message := renderMessage(strings.TrimSpace(message.Text), false)
-				m.messages = append(m.messages, message)
+				text := renderUserMessage(strings.TrimSpace(message.Text))
+				m.messages = append(m.messages, text)
 			} else {
-				renderedMessage := renderMarkdown(message.Text, m.width)
-				m.messages = append(m.messages, strings.TrimSpace(renderedMessage))
+				rendered := renderMarkdown(message.Text, m.width)
+				wrapped := renderAssistantMessage(strings.TrimSpace(rendered), false)
+				m.messages = append(m.messages, wrapped)
 			}
 
 		}

@@ -262,7 +262,8 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case statusMsg:
-		m.messages = append(m.messages, string(msg))
+		wrapped := renderAssistantMessage(string(msg), false)
+		m.messages = append(m.messages, wrapped)
 		m.loading = false
 		m.notice = ""
 		m.spinnerIndex = rand.IntN(len(spinners) - 1)
@@ -295,7 +296,8 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamEndMsg:
 		if m.partialResponse != "" {
 			rendered := renderMarkdown(m.partialResponse, m.width)
-			m.messages = append(m.messages, strings.TrimSpace(rendered))
+			wrapped := renderAssistantMessage(strings.TrimSpace(rendered), false)
+			m.messages = append(m.messages, wrapped)
 			m.renderViewport(strings.Join(m.messages, "\n"))
 			m.viewport.GotoBottom()
 		}
