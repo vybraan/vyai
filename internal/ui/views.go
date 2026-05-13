@@ -16,19 +16,19 @@ func (m UIModel) View() string {
 	switch m.activeTab {
 	case 0:
 		return fmt.Sprintf(
-			"%s\n%s%s%s%s\n%s", m.headerView(),
+			"%s%s\n%s%s%s\n%s", m.headerView(),
+			notice,
 			m.viewport.View(),
 			gap,
 			m.inputView(),
-			notice,
 			m.footerView(),
 		)
 	case 1:
-		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.theme.DocStyle.Render(m.explore.View()), notice)
+		return fmt.Sprintf("%s%s\n%s", m.headerView(), notice, m.theme.DocStyle.Render(m.explore.View()))
 	case 2:
-		return fmt.Sprintf("%s\n%s%s", m.headerView(), m.theme.DocStyle.Render(m.settings.View()), notice)
+		return fmt.Sprintf("%s%s\n%s", m.headerView(), notice, m.theme.DocStyle.Render(m.settings.View()))
 	default:
-		return fmt.Sprintf("%s\n%s%s", m.headerView(), "Unknown tab", notice)
+		return fmt.Sprintf("%s%s\n%s", m.headerView(), notice, "Unknown tab")
 
 	}
 }
