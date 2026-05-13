@@ -26,11 +26,44 @@ func (m UIModel) View() string {
 	case 1:
 		return fmt.Sprintf("%s%s\n%s", m.headerView(), notice, m.theme.DocStyle.Render(m.explore.View()))
 	case 2:
-		return fmt.Sprintf("%s%s\n%s", m.headerView(), notice, m.theme.DocStyle.Render(m.settings.View()))
+		return fmt.Sprintf("%s%s\n%s", m.headerView(), notice, m.settingsView())
 	default:
 		return fmt.Sprintf("%s%s\n%s", m.headerView(), notice, "Unknown tab")
 
 	}
+}
+
+func (m UIModel) settingsView() string {
+	var items []string
+	for i, item := range m.settingsItems {
+		title := item.title
+		desc := item.desc
+		if i == m.settingsIndex {
+			title = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#7aa2f7")).
+				Bold(true).
+				Render("▸ " + title)
+			desc = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#7aa2f7")).
+				Render(desc)
+		} else {
+			title = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D9DCCF")).
+				Render("  " + title)
+			desc = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#777777")).
+				Render("  " + desc)
+		}
+		block := lipgloss.JoinVertical(lipgloss.Left, title, desc)
+		if i < len(m.settingsItems)-1 {
+			block += "\n"
+		}
+		items = append(items, block)
+	}
+	header := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#858392")).
+		Render("Settings  Enter: toggle/cycle value")
+	return header + "\n" + lipgloss.JoinVertical(lipgloss.Left, items...)
 }
 
 func (m UIModel) inputView() string {

@@ -254,10 +254,10 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 
 		return m, nil
 	case 2:
-		item, ok := m.settings.SelectedItem().(settingsItem)
-		if !ok {
+		if m.settingsIndex >= len(m.settingsItems) {
 			return m, nil
 		}
+		item := m.settingsItems[m.settingsIndex]
 		switch item.itemType {
 		case settingTypeChatModel:
 			newModel := nextModel(m.gsService.Config().ChatModel)

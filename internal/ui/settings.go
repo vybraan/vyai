@@ -2,8 +2,6 @@ package ui
 
 import (
 	"fmt"
-
-	"github.com/charmbracelet/bubbles/v2/list"
 )
 
 type settingsItemType int
@@ -55,8 +53,8 @@ func nextModel(current string) string {
 	return knownModels[0]
 }
 
-func buildSettingsItems(chatModel, descriptionModel, cfgPath, systemPromptPath, descriptionPromptPath string) []list.Item {
-	return []list.Item{
+func buildSettingsItems(chatModel, descriptionModel, cfgPath, systemPromptPath, descriptionPromptPath string) []settingsItem {
+	return []settingsItem{
 		newSettingsItem("Chat Model", "Model used for conversations. Current: "+chatModel, "", settingTypeChatModel, chatModel),
 		newSettingsItem("Description Model", "Model used for conversation titles. Current: "+descriptionModel, "", settingTypeDescModel, descriptionModel),
 		newSettingsItem("Application Config", "Configure models, prompts, and paths. File: "+cfgPath, cfgPath, settingTypePath, ""),

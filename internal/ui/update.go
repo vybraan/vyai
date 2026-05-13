@@ -62,45 +62,26 @@ func NewUIModel(gs *gemini.GeminiService, workspace string, agentRunner agent.Ru
 		Foreground(lipgloss.Color("#68FFD6")).
 		Padding(0, 0, 0, 1)
 
-	settingsDelegate := list.NewDefaultDelegate()
-	settingsDelegate.Styles.NormalTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#D9DCCF")).Padding(0, 0, 0, 2)
-	settingsDelegate.Styles.NormalDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#777777")).Padding(0, 0, 0, 2)
-	settingsDelegate.Styles.DimmedTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#605F6B")).Padding(0, 0, 0, 2)
-	settingsDelegate.Styles.DimmedDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#4D4D4D")).Padding(0, 0, 0, 2)
-	settingsDelegate.Styles.SelectedTitle = lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("#7aa2f7")).
-		Foreground(lipgloss.Color("#7aa2f7")).
-		Padding(0, 0, 0, 1)
-	settingsDelegate.Styles.SelectedDesc = lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("#7aa2f7")).
-		Foreground(lipgloss.Color("#7aa2f7")).
-		Padding(0, 0, 0, 1)
-
 	explore := list.New([]list.Item{}, exploreDelegate, 0, 0)
-	settings := list.New([]list.Item{}, settingsDelegate, 0, 0)
-	settings.DisableQuitKeybindings()
-	settings.SetShowStatusBar(false)
-	settings.SetFilteringEnabled(false)
-	settings.Title = "Settings"
 
 	tabs := []string{"Chat", "Explore", "Settings"}
+	si := buildSettingsItems(gs.Config().ChatModel, gs.Config().DescriptionModel, gs.Config().ConfigFile, gs.Config().SystemPromptFile, gs.Config().DescriptionPromptFile)
 	return UIModel{
-		theme:       theme,
-		state:       Normal,
-		explore:     explore,
-		settings:    settings,
-		gsService:   gs,
-		textarea:    ta,
-		messages:    []string{},
-		err:         nil,
-		spinner:     s,
-		loading:     false,
-		workspace:   workspace,
-		agentRunner: agentRunner,
-		Tabs:        tabs,
-		activeTab:   0,
+		theme:         theme,
+		state:         Normal,
+		explore:       explore,
+		settingsItems: si,
+		settingsIndex: 0,
+		gsService:     gs,
+		textarea:      ta,
+		messages:      []string{},
+		err:           nil,
+		spinner:       s,
+		loading:       false,
+		workspace:     workspace,
+		agentRunner:   agentRunner,
+		Tabs:          tabs,
+		activeTab:     0,
 	}
 }
 
@@ -115,22 +96,29 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Take care of tabs now
 	switch m.activeTab {
 	case 0:
-
 		if m.state == Insert {
 			m.textarea, textareaCmd = m.textarea.Update(msg)
 		} else {
 			m.viewport, viewportCmd = m.viewport.Update(msg)
 		}
-
 		if m.loading {
 			spinnerCmd = m.spinner.Tick
 		}
 	case 1:
-
 		m.explore, listCmd = m.explore.Update(msg)
 	case 2:
-
-		m.settings, listCmd = m.settings.Update(msg)
+		if msg, ok := msg.(tea.KeyMsg); ok {
+			switch msg.String() {
+			case "up", "k":
+				if m.settingsIndex > 0 {
+					m.settingsIndex--
+				}
+			case "down", "j":
+				if m.settingsIndex < len(m.settingsItems)-1 {
+					m.settingsIndex++
+				}
+			}
+		}
 	}
 
 	cmds = append(cmds, textareaCmd, viewportCmd, spinnerCmd, listCmd)
@@ -167,7 +155,6 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		h, v := m.theme.DocStyle.GetFrameSize()
 		m.explore.SetSize(msg.Width-h, msg.Height-v-lipgloss.Height(m.headerView()))
-		m.settings.SetSize(msg.Width-h, msg.Height-v-lipgloss.Height(m.headerView()))
 		m.refreshSettingsList()
 
 	case tea.KeyMsg:
@@ -359,9 +346,6 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshSettingsList()
 		m.notice = "Settings reloaded."
-		if m.activeTab == 2 {
-			m.settings.Title = "Settings"
-		}
 
 	case descriptionUpdatedMsg:
 		m.refreshExploreList()
@@ -406,6 +390,8 @@ func (m *UIModel) refreshExploreList() {
 
 func (m *UIModel) refreshSettingsList() {
 	cfg := m.gsService.Config()
-	m.settings.SetItems(buildSettingsItems(cfg.ChatModel, cfg.DescriptionModel, cfg.ConfigFile, cfg.SystemPromptFile, cfg.DescriptionPromptFile))
-	m.settings.Title = "Settings  Enter: toggle/cycle value"
+	m.settingsItems = buildSettingsItems(cfg.ChatModel, cfg.DescriptionModel, cfg.ConfigFile, cfg.SystemPromptFile, cfg.DescriptionPromptFile)
+	if m.settingsIndex >= len(m.settingsItems) {
+		m.settingsIndex = 0
+	}
 }

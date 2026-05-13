@@ -60,7 +60,8 @@ type UIModel struct {
 	height          int
 	theme           Theme
 	explore         list.Model
-	settings        list.Model
+	settingsItems   []settingsItem
+	settingsIndex   int
 	state           State
 	viewport        viewport.Model
 	messages        []string
