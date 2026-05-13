@@ -127,6 +127,9 @@ func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Te
 
 	var response strings.Builder
 
+	if result == nil {
+		return "", fmt.Errorf("send message: nil response")
+	}
 	for _, cand := range result.Candidates {
 		if cand.Content != nil {
 			for _, part := range cand.Content.Parts {
@@ -145,6 +148,9 @@ func (mhr *MemoryHistoryRepository) SendMessageStream(c context.Context, text ge
 	}
 
 	iter := mhr.chatSession.SendMessageStream(c, text)
+	if iter == nil {
+		return "", fmt.Errorf("send message: stream returned nil iterator")
+	}
 	var fullResponse strings.Builder
 
 	for {
@@ -154,6 +160,9 @@ func (mhr *MemoryHistoryRepository) SendMessageStream(c context.Context, text ge
 		}
 		if err != nil {
 			return "", fmt.Errorf("send message: %w", err)
+		}
+		if resp == nil {
+			continue
 		}
 		for _, cand := range resp.Candidates {
 			if cand.Content != nil {

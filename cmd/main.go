@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -13,6 +14,13 @@ import (
 )
 
 func main() {
+	if os.Getenv("GOOGLE_API_KEY") == "" {
+		fmt.Println("Error: GOOGLE_API_KEY environment variable is not set.")
+		fmt.Println("Get a key from https://aistudio.google.com/apikey")
+		fmt.Println("Then: export GOOGLE_API_KEY=your_key_here")
+		os.Exit(1)
+	}
+
 	cfg, err := appconfig.Load()
 	if err != nil {
 		log.Fatal(err)
