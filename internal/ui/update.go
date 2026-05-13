@@ -47,7 +47,23 @@ func NewUIModel(gs *gemini.GeminiService, workspace string, agentRunner agent.Ru
 	s.Spinner = spinner.Dot
 	s.Style = theme.SpinnerStyle
 
-	explore := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	exploreDelegate := list.NewDefaultDelegate()
+	exploreDelegate.Styles.NormalTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#D9DCCF")).Padding(0, 0, 0, 2)
+	exploreDelegate.Styles.NormalDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#777777")).Padding(0, 0, 0, 2)
+	exploreDelegate.Styles.DimmedTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#605F6B")).Padding(0, 0, 0, 2)
+	exploreDelegate.Styles.DimmedDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#4D4D4D")).Padding(0, 0, 0, 2)
+	exploreDelegate.Styles.SelectedTitle = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("#c3e88d")).
+		Foreground(lipgloss.Color("#c3e88d")).
+		Padding(0, 0, 0, 1)
+	exploreDelegate.Styles.SelectedDesc = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("#c3e88d")).
+		Foreground(lipgloss.Color("#68FFD6")).
+		Padding(0, 0, 0, 1)
+
+	explore := list.New([]list.Item{}, exploreDelegate, 0, 0)
 	settings := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	settings.DisableQuitKeybindings()
 	settings.SetShowStatusBar(false)
