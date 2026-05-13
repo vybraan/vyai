@@ -73,7 +73,7 @@ func (m UIModel) inputView() string {
 	if m.streaming && m.partialResponse != "" {
 		return "\n\n" // 2 blank lines + gap's \n = 3 lines total, matches textarea
 	}
-	return m.spinner.View() + " Thinking...\n" // 3 lines
+	return m.spinner.View() + " Thinking...\n\n" // 3 lines total (matches textarea height)
 }
 
 func (m UIModel) headerView() string {

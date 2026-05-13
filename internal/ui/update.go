@@ -369,11 +369,12 @@ func (m *UIModel) resizeViewport() {
 		return
 	}
 	headerH := lipgloss.Height(m.headerView())
-	below := 1 + 3 + 1 + 1 // gap + input + \n + footer
+	footerH := lipgloss.Height(m.footerView())
+	nonViewport := headerH + 3 + footerH // header + input + footer
 	if m.notice != "" {
-		below += 2 // notice: \n + text
+		nonViewport++ // notice text line (the "\n" prefix in noticeView is just a separator, not an extra line)
 	}
-	m.viewport.SetHeight(m.height - headerH - below)
+	m.viewport.SetHeight(m.height - nonViewport)
 }
 func (m *UIModel) refreshExploreList() {
 	items, err := m.gsService.GetAllConversations()
