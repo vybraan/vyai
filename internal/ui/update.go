@@ -3,7 +3,6 @@ package ui
 import (
 	"math/rand/v2"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/list"
@@ -140,24 +139,17 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		headerHeight := lipgloss.Height(m.headerView())
-		footerHeight := lipgloss.Height(m.footerView())
-		textareaHeight := lipgloss.Height(strconv.Itoa(m.textarea.Height()))
-
-		verticalMarginHeight := headerHeight + footerHeight + textareaHeight + textareaHeight + textareaHeight
 
 		if !m.ready {
-
-			m.viewport = viewport.New(viewport.WithWidth(msg.Width), viewport.WithHeight(msg.Height-verticalMarginHeight))
+			m.viewport = viewport.New(viewport.WithWidth(msg.Width), viewport.WithHeight(1))
 			m.viewport.Style = m.theme.ViewportStyleNormal
 			m.viewport.SetContent(`Welcome to vyai - cli interface for AI!`)
 			m.viewport.MouseWheelEnabled = false
 			m.ready = true
 		} else {
 			m.viewport.SetWidth(msg.Width)
-			m.viewport.SetHeight(msg.Height - verticalMarginHeight)
-
 		}
+		m.resizeViewport()
 
 		m.textarea.SetWidth(msg.Width)
 		if len(m.messages) > 0 {
@@ -174,8 +166,8 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.explore.Title = "Conversations  Enter: open  r: rename  x: delete"
 
 		h, v := m.theme.DocStyle.GetFrameSize()
-		m.explore.SetSize(msg.Width-h, msg.Height-v-headerHeight)
-		m.settings.SetSize(msg.Width-h, msg.Height-v-headerHeight)
+		m.explore.SetSize(msg.Width-h, msg.Height-v-lipgloss.Height(m.headerView()))
+		m.settings.SetSize(msg.Width-h, msg.Height-v-lipgloss.Height(m.headerView()))
 		m.refreshSettingsList()
 
 	case tea.KeyMsg:
@@ -266,6 +258,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = append(m.messages, wrapped)
 		m.loading = false
 		m.notice = ""
+		m.resizeViewport()
 		m.spinnerIndex = rand.IntN(len(spinners) - 1)
 		m.resetSpinner()
 		m.renderViewport(strings.Join(m.messages, "\n"))
@@ -307,6 +300,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streamTokens = nil
 		m.streamErr = nil
 		m.notice = ""
+		m.resizeViewport()
 		m.spinnerIndex = rand.IntN(len(spinners) - 1)
 		m.resetSpinner()
 	case spinner.TickMsg:
@@ -317,6 +311,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case noticeMsg:
 		m.notice = msg.text
+		m.resizeViewport()
 		if msg.stopLoading {
 			m.loading = false
 			m.streaming = false
@@ -383,6 +378,18 @@ func (m *UIModel) updateViewportStyle() {
 	} else {
 		m.viewport.Style = m.theme.ViewportStyleNormal
 	}
+}
+
+func (m *UIModel) resizeViewport() {
+	if !m.ready {
+		return
+	}
+	headerH := lipgloss.Height(m.headerView())
+	below := 1 + 3 + 1 + 1 // gap + input + \n + footer
+	if m.notice != "" {
+		below += 2 // notice: \n + text
+	}
+	m.viewport.SetHeight(m.height - headerH - below)
 }
 func (m *UIModel) refreshExploreList() {
 	items, err := m.gsService.GetAllConversations()
