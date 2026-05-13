@@ -13,35 +13,13 @@ func (m UIModel) View() string {
 
 	notice := m.noticeView()
 
-	//Tabirization
 	switch m.activeTab {
 	case 0:
-		if m.loading {
-			if m.streaming && m.partialResponse != "" {
-				return fmt.Sprintf(
-					"%s\n%s%s%s\n%s", m.headerView(),
-					m.viewport.View(),
-					gap,
-					notice,
-					m.footerView(),
-				)
-			}
-			loadGap := "\n\n"
-			return fmt.Sprintf(
-				"%s\n%s%s%s%s\n%s", m.headerView(),
-				m.viewport.View(),
-				loadGap,
-				notice,
-				m.spinner.View()+" Thinking...\n",
-				m.footerView(),
-			)
-		}
-
 		return fmt.Sprintf(
 			"%s\n%s%s%s%s\n%s", m.headerView(),
 			m.viewport.View(),
 			gap,
-			m.textarea.View(),
+			m.inputView(),
 			notice,
 			m.footerView(),
 		)
@@ -53,6 +31,16 @@ func (m UIModel) View() string {
 		return fmt.Sprintf("%s\n%s%s", m.headerView(), "Unknown tab", notice)
 
 	}
+}
+
+func (m UIModel) inputView() string {
+	if !m.loading {
+		return m.textarea.View()
+	}
+	if m.streaming && m.partialResponse != "" {
+		return "\n\n" // 2 blank lines + gap's \n = 3 lines total, matches textarea
+	}
+	return m.spinner.View() + " Thinking...\n" // 3 lines
 }
 
 func (m UIModel) headerView() string {
