@@ -6,14 +6,30 @@ import (
 	"github.com/charmbracelet/bubbles/v2/list"
 )
 
+type settingsItemType int
+
+const (
+	settingTypePath settingsItemType = iota
+	settingTypeChatModel
+	settingTypeDescModel
+)
+
 type settingsItem struct {
-	title string
-	desc  string
-	path  string
+	title       string
+	desc        string
+	path        string
+	itemType    settingsItemType
+	currentVal  string
 }
 
-func newSettingsItem(title, description, path string) settingsItem {
-	return settingsItem{title: title, desc: description, path: path}
+func newSettingsItem(title, description, path string, itemType settingsItemType, currentVal string) settingsItem {
+	return settingsItem{
+		title:      title,
+		desc:       description,
+		path:       path,
+		itemType:   itemType,
+		currentVal: currentVal,
+	}
 }
 
 func (i settingsItem) Title() string       { return i.title }
@@ -21,11 +37,31 @@ func (i settingsItem) Description() string { return i.desc }
 func (i settingsItem) FilterValue() string { return i.title + " " + i.desc }
 func (i settingsItem) Path() string        { return i.path }
 
+var knownModels = []string{
+	"gemini-3-flash-preview",
+	"gemini-2.5-pro-preview-03-25",
+	"gemini-2.0-flash",
+	"gemini-2.0-flash-lite",
+	"gemini-1.5-pro",
+	"gemini-1.5-flash",
+}
+
+func nextModel(current string) string {
+	for i, m := range knownModels {
+		if m == current && i+1 < len(knownModels) {
+			return knownModels[i+1]
+		}
+	}
+	return knownModels[0]
+}
+
 func buildSettingsItems(chatModel, descriptionModel, cfgPath, systemPromptPath, descriptionPromptPath string) []list.Item {
 	return []list.Item{
-		newSettingsItem("Application Config", "Models, paths, and data directory. Active chat model: "+chatModel, cfgPath),
-		newSettingsItem("System Prompt", "Default assistant behavior and response policy", systemPromptPath),
-		newSettingsItem("Description Prompt", "Conversation title generation prompt. Active model: "+descriptionModel, descriptionPromptPath),
+		newSettingsItem("Chat Model", "Model used for conversations. Current: "+chatModel, "", settingTypeChatModel, chatModel),
+		newSettingsItem("Description Model", "Model used for conversation titles. Current: "+descriptionModel, "", settingTypeDescModel, descriptionModel),
+		newSettingsItem("Application Config", "Configure models, prompts, and paths. File: "+cfgPath, cfgPath, settingTypePath, ""),
+		newSettingsItem("System Prompt", "Default assistant behavior and response policy. File: "+systemPromptPath, systemPromptPath, settingTypePath, ""),
+		newSettingsItem("Description Prompt", "Conversation title generation prompt. File: "+descriptionPromptPath, descriptionPromptPath, settingTypePath, ""),
 	}
 }
 

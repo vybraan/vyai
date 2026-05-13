@@ -229,8 +229,25 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 		if !ok {
 			return m, nil
 		}
-		_, cmd := m.openEditorForPath(item.Path(), true)
-		return m, cmd
+		switch item.itemType {
+		case settingTypeChatModel:
+			newModel := nextModel(m.gsService.Config().ChatModel)
+			if err := m.gsService.SetChatModel(newModel); err != nil {
+				return m, noticeCmd("Failed to update model: "+summarizeUserError(err), false)
+			}
+			m.refreshSettingsList()
+			return m, noticeCmd("Chat model: "+newModel, false)
+		case settingTypeDescModel:
+			newModel := nextModel(m.gsService.Config().DescriptionModel)
+			if err := m.gsService.SetDescriptionModel(newModel); err != nil {
+				return m, noticeCmd("Failed to update model: "+summarizeUserError(err), false)
+			}
+			m.refreshSettingsList()
+			return m, noticeCmd("Description model: "+newModel, false)
+		default:
+			_, cmd := m.openEditorForPath(item.Path(), true)
+			return m, cmd
+		}
 	}
 	return m, nil
 }

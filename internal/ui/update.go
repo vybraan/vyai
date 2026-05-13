@@ -63,8 +63,24 @@ func NewUIModel(gs *gemini.GeminiService, workspace string, agentRunner agent.Ru
 		Foreground(lipgloss.Color("#68FFD6")).
 		Padding(0, 0, 0, 1)
 
+	settingsDelegate := list.NewDefaultDelegate()
+	settingsDelegate.Styles.NormalTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#D9DCCF")).Padding(0, 0, 0, 2)
+	settingsDelegate.Styles.NormalDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#777777")).Padding(0, 0, 0, 2)
+	settingsDelegate.Styles.DimmedTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#605F6B")).Padding(0, 0, 0, 2)
+	settingsDelegate.Styles.DimmedDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#4D4D4D")).Padding(0, 0, 0, 2)
+	settingsDelegate.Styles.SelectedTitle = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("#7aa2f7")).
+		Foreground(lipgloss.Color("#7aa2f7")).
+		Padding(0, 0, 0, 1)
+	settingsDelegate.Styles.SelectedDesc = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("#7aa2f7")).
+		Foreground(lipgloss.Color("#7aa2f7")).
+		Padding(0, 0, 0, 1)
+
 	explore := list.New([]list.Item{}, exploreDelegate, 0, 0)
-	settings := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	settings := list.New([]list.Item{}, settingsDelegate, 0, 0)
 	settings.DisableQuitKeybindings()
 	settings.SetShowStatusBar(false)
 	settings.SetFilteringEnabled(false)
@@ -382,5 +398,5 @@ func (m *UIModel) refreshExploreList() {
 func (m *UIModel) refreshSettingsList() {
 	cfg := m.gsService.Config()
 	m.settings.SetItems(buildSettingsItems(cfg.ChatModel, cfg.DescriptionModel, cfg.ConfigFile, cfg.SystemPromptFile, cfg.DescriptionPromptFile))
-	m.settings.Title = "Settings  Enter: edit selected file"
+	m.settings.Title = "Settings  Enter: toggle/cycle value"
 }

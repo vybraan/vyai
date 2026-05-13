@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -322,6 +323,50 @@ func (gs *GeminiService) RenameConversation(id string, description string) error
 	target.SetDescriptionLocked(true)
 	gs.persistConversation(target)
 	return nil
+}
+
+func (gs *GeminiService) SetChatModel(model string) error {
+	old := gs.cfg.ChatModel
+	gs.cfg.ChatModel = model
+	if err := gs.persistConfig(); err != nil {
+		gs.cfg.ChatModel = old
+		return err
+	}
+	for _, conv := range gs.cm.All() {
+		if conv.ChatModel == old || conv.ChatModel == "" {
+			conv.ChatModel = model
+			conv.Repo.ResetSession()
+			gs.persistConversation(conv)
+		}
+	}
+	return nil
+}
+
+func (gs *GeminiService) SetDescriptionModel(model string) error {
+	gs.cfg.DescriptionModel = model
+	return gs.persistConfig()
+}
+
+func (gs *GeminiService) persistConfig() error {
+	cfg := gs.cfg
+	fc := struct {
+		ChatModel             string `json:"chat_model"`
+		DescriptionModel      string `json:"description_model"`
+		SystemPromptFile      string `json:"system_prompt_file"`
+		DescriptionPromptFile string `json:"description_prompt_file"`
+		DataDir               string `json:"data_dir"`
+	}{
+		ChatModel:             cfg.ChatModel,
+		DescriptionModel:      cfg.DescriptionModel,
+		SystemPromptFile:      cfg.SystemPromptFile,
+		DescriptionPromptFile: cfg.DescriptionPromptFile,
+		DataDir:               cfg.DataDir,
+	}
+	data, err := json.MarshalIndent(fc, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfg.ConfigFile, data, 0644)
 }
 
 func (gs *GeminiService) DeleteConversation(id string) error {
