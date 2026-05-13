@@ -15,6 +15,13 @@ type (
 		stopLoading bool
 	}
 	statusMsg string
+	streamStartMsg struct {
+		tokens     chan string
+		errCh      chan error
+		firstToken string
+	}
+	streamMsg   string
+	streamEndMsg struct{}
 	editorMsg struct {
 		path                 string
 		reloadConfig         bool
@@ -49,25 +56,29 @@ var (
 )
 
 type UIModel struct {
-	width        int
-	height       int
-	theme        Theme
-	explore      list.Model
-	settings     list.Model
-	state        State
-	viewport     viewport.Model
-	messages     []string
-	textarea     textarea.Model
-	gsService    *gemini.GeminiService
-	err          error
-	spinner      spinner.Model
-	spinnerIndex int
-	loading      bool
-	notice       string
-	workspace    string
-	Tabs         []string
-	activeTab    int
-	ready        bool
-	agentRunner  agent.Runner
-	deleteTarget string
+	width           int
+	height          int
+	theme           Theme
+	explore         list.Model
+	settings        list.Model
+	state           State
+	viewport        viewport.Model
+	messages        []string
+	textarea        textarea.Model
+	gsService       *gemini.GeminiService
+	err             error
+	spinner         spinner.Model
+	spinnerIndex    int
+	loading         bool
+	streaming       bool
+	partialResponse string
+	streamTokens    chan string
+	streamErr       chan error
+	notice          string
+	workspace       string
+	Tabs            []string
+	activeTab       int
+	ready           bool
+	agentRunner     agent.Runner
+	deleteTarget    string
 }

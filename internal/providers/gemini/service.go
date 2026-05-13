@@ -147,7 +147,28 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 	}
 	conversation.Touch()
 
-	// Set the first time description and set it to still be able to be updated later
+	if conversation.GetDescription() == "New Conversation..." {
+		gs.SetConversationDescription(c, false)
+	}
+
+	return result, nil
+}
+
+func (gs *GeminiService) SendMessageStream(c context.Context, message string, onToken func(string)) (string, error) {
+	conversation, err := gs.cm.GetActiveConversation()
+	if err != nil {
+		conversation, err = gs.NewConversation(c)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	result, err := conversation.Repo.SendMessageStream(c, genai.Text(message), onToken)
+	if err != nil {
+		return "", err
+	}
+	conversation.Touch()
+
 	if conversation.GetDescription() == "New Conversation..." {
 		gs.SetConversationDescription(c, false)
 	}

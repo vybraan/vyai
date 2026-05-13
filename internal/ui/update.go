@@ -233,10 +233,48 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = append(m.messages, string(msg))
 		m.loading = false
 		m.notice = ""
-		m.spinnerIndex = rand.IntN(len(spinners)-1-0) + 0
+		m.spinnerIndex = rand.IntN(len(spinners) - 1)
 		m.resetSpinner()
 		m.renderViewport(strings.Join(m.messages, "\n"))
 		m.viewport.GotoBottom()
+	case streamStartMsg:
+		m.streaming = true
+		m.partialResponse = msg.firstToken
+		m.streamTokens = msg.tokens
+		m.streamErr = msg.errCh
+		rendered := renderMarkdown(msg.firstToken, m.width)
+		if len(m.messages) > 0 {
+			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + rendered)
+		} else {
+			m.renderViewport(rendered)
+		}
+		m.viewport.GotoBottom()
+		return m, pollStreamCmd(m)
+	case streamMsg:
+		m.partialResponse = string(msg)
+		rendered := renderMarkdown(string(msg), m.width)
+		if len(m.messages) > 0 {
+			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + rendered)
+		} else {
+			m.renderViewport(rendered)
+		}
+		m.viewport.GotoBottom()
+		return m, pollStreamCmd(m)
+	case streamEndMsg:
+		if m.partialResponse != "" {
+			rendered := renderMarkdown(m.partialResponse, m.width)
+			m.messages = append(m.messages, strings.TrimSpace(rendered))
+			m.renderViewport(strings.Join(m.messages, "\n"))
+			m.viewport.GotoBottom()
+		}
+		m.streaming = false
+		m.loading = false
+		m.partialResponse = ""
+		m.streamTokens = nil
+		m.streamErr = nil
+		m.notice = ""
+		m.spinnerIndex = rand.IntN(len(spinners) - 1)
+		m.resetSpinner()
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -247,6 +285,10 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = msg.text
 		if msg.stopLoading {
 			m.loading = false
+			m.streaming = false
+			m.partialResponse = ""
+			m.streamTokens = nil
+			m.streamErr = nil
 			m.spinnerIndex = rand.IntN(len(spinners) - 1)
 			m.resetSpinner()
 			m.renderViewport(strings.Join(m.messages, "\n"))

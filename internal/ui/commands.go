@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/v2/list"
 	"github.com/charmbracelet/bubbles/v2/spinner"
@@ -266,25 +267,54 @@ func (m UIModel) deleteSelectedConversation() (UIModel, tea.Cmd) {
 }
 
 func sendMessageCmd(m UIModel, prompt string) tea.Cmd {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+
+	tokens := make(chan string, 20)
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer cancel()
+		_, err := m.gsService.SendMessageStream(ctx, prompt, func(token string) {
+			tokens <- token
+		})
+		if err != nil {
+			errCh <- err
+		}
+		close(tokens)
+	}()
+
 	return func() tea.Msg {
-		respChan := make(chan string)
-		errChan := make(chan error)
-
-		// send message
-		go func() {
-			message, err := m.gsService.SendMessage(context.Background(), prompt)
-			if err != nil {
-				errChan <- err
-				return
-			}
-			respChan <- message
-		}()
-
 		select {
-		case message := <-respChan:
-			renderedMessage := renderMarkdown(message, m.width)
-			return statusMsg(strings.TrimSpace(renderedMessage))
-		case err := <-errChan:
+		case token, ok := <-tokens:
+			if !ok {
+				select {
+				case err := <-errCh:
+					return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
+				default:
+					return streamEndMsg{}
+				}
+			}
+			return streamStartMsg{tokens: tokens, errCh: errCh, firstToken: token}
+		case err := <-errCh:
+			return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
+		}
+	}
+}
+
+func pollStreamCmd(m UIModel) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case token, ok := <-m.streamTokens:
+			if !ok {
+				select {
+				case err := <-m.streamErr:
+					return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
+				default:
+					return streamEndMsg{}
+				}
+			}
+			return streamMsg(token)
+		case err := <-m.streamErr:
 			return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
 		}
 	}

@@ -17,6 +17,15 @@ func (m UIModel) View() string {
 	switch m.activeTab {
 	case 0:
 		if m.loading {
+			if m.streaming && m.partialResponse != "" {
+				return fmt.Sprintf(
+					"%s\n%s%s%s\n%s", m.headerView(),
+					m.viewport.View(),
+					gap,
+					notice,
+					m.footerView(),
+				)
+			}
 			loadGap := "\n\n"
 			return fmt.Sprintf(
 				"%s\n%s%s%s%s\n%s", m.headerView(),

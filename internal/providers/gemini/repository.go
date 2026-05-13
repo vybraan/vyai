@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/iterator"
 )
 
 type Message struct {
@@ -22,6 +23,7 @@ var (
 
 type HistoryRepository interface {
 	SendMessage(c context.Context, text genai.Text) (string, error)
+	SendMessageStream(c context.Context, text genai.Text, onToken func(string)) (string, error)
 	GetMessages() ([]Message, error)
 	ResetSession()
 }
@@ -135,6 +137,51 @@ func (mhr *MemoryHistoryRepository) SendMessage(c context.Context, text genai.Te
 	finalResponse := response.String()
 	return finalResponse, nil
 
+}
+
+func (mhr *MemoryHistoryRepository) SendMessageStream(c context.Context, text genai.Text, onToken func(string)) (string, error) {
+	if err := mhr.ensureSession(c); err != nil {
+		return "", err
+	}
+
+	iter := mhr.chatSession.SendMessageStream(c, text)
+	var fullResponse strings.Builder
+
+	for {
+		resp, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("send message: %w", err)
+		}
+		for _, cand := range resp.Candidates {
+			if cand.Content != nil {
+				for _, part := range cand.Content.Parts {
+					if t, ok := part.(genai.Text); ok {
+						fullResponse.WriteString(string(t))
+					}
+				}
+			}
+		}
+		onToken(fullResponse.String())
+	}
+
+	mhr.mu.Lock()
+	if len(mhr.chatSession.History) > mhr.messageLimit {
+		mhr.chatSession.History = mhr.chatSession.History[len(mhr.chatSession.History)-mhr.messageLimit:]
+	}
+	mhr.cachedMessages = messagesFromHistory(mhr.chatSession.History)
+	mhr.needsCacheUpdate = false
+	snapshot := append([]Message(nil), mhr.cachedMessages...)
+	onChange := mhr.onChange
+	mhr.mu.Unlock()
+
+	if onChange != nil {
+		onChange(snapshot)
+	}
+
+	return fullResponse.String(), nil
 }
 
 func (mhr *MemoryHistoryRepository) ensureSession(c context.Context) error {
