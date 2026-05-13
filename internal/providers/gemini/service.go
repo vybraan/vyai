@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/appconfig"
 	"github.com/vybraan/vyai/internal/utils"
@@ -33,7 +32,6 @@ type GeminiService struct {
 	cm                 *ConversationManager
 	cfg                *appconfig.Config
 	store              *FileConversationStore
-	logger             *log.Logger
 	descriptionUpdates chan DescriptionUpdate
 	notices            chan Notice
 }
@@ -43,7 +41,6 @@ func NewGeminiService(cm *ConversationManager, cfg *appconfig.Config) *GeminiSer
 		cm:                 cm,
 		cfg:                cfg,
 		store:              NewFileConversationStore(cfg.DataDir),
-		logger:             log.Default(),
 		descriptionUpdates: make(chan DescriptionUpdate, 8),
 		notices:            make(chan Notice, 8),
 	}
@@ -62,16 +59,11 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 
 		conv := gs.cm.active
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					gs.logger.Errorf("Recovered from panic in SetConversationDescription goroutine: %v", r)
-				}
-			}()
+			defer func() { recover() }()
 			desc, err := utils.GenerateEphemeralMessage(c, gs.cfg.DescriptionModel, buildDescriptionPrompt(messages)+"\n\n"+gs.cfg.DescriptionPrompt)
 			if err != nil {
 				notice := summarizeGeminiError("Conversation title was not updated", err)
 				gs.publishNotice(notice)
-				gs.logger.Warnf("%s", notice)
 				return
 			}
 			desc = strings.TrimSpace(desc)
@@ -85,7 +77,6 @@ func (gs *GeminiService) SetConversationDescription(c context.Context, lock_desc
 			select {
 			case gs.descriptionUpdates <- DescriptionUpdate{ID: conv.ID, Description: desc}:
 			case <-c.Done():
-				gs.logger.Debugf("Context cancelled, not publishing description update")
 				return
 			}
 		}()
@@ -295,7 +286,6 @@ func (gs *GeminiService) persistConversation(conv *Conversation) {
 
 	messages, err := conv.Repo.GetMessages()
 	if err != nil && !errors.Is(err, ErrNoMessagesInHistory) && !errors.Is(err, ErrSessionNotInitialized) {
-		gs.logger.Warnf("Persist conversation failed: %v", err)
 		return
 	}
 
@@ -308,9 +298,7 @@ func (gs *GeminiService) persistConversation(conv *Conversation) {
 		ChatModel:         conv.ChatModel,
 		Messages:          messages,
 	}
-	if err := gs.store.Save(record); err != nil {
-		gs.logger.Warnf("Persist conversation failed: %v", err)
-	}
+	gs.store.Save(record)
 }
 
 func (gs *GeminiService) RenameConversation(id string, description string) error {
