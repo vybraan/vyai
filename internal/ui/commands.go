@@ -26,7 +26,7 @@ var focusedMessageBorder = lipgloss.Border{
 
 func renderUserMessage(message string) string {
 	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B50FF")).Bold(true).Render("You")
-	content := label + "\n" + message
+	content := label + "\n" + message + "\n"
 	style := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#DFDBDD")).
 		PaddingLeft(1).
@@ -42,7 +42,7 @@ func renderAssistantMessage(message string, focused bool) string {
 		borderStyle = focusedMessageBorder
 	}
 	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#12C78F")).Bold(true).Render("VyAI")
-	content := label + "\n" + message
+	content := label + "\n" + message + "\n"
 	style := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#DFDBDD")).
 		PaddingLeft(1).
