@@ -74,19 +74,16 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		textareaCmd tea.Cmd
 		viewportCmd tea.Cmd
 		listCmd     tea.Cmd
-		spinnerCmd  tea.Cmd
 		cmds        []tea.Cmd
 	)
 	// Take care of tabs now
 	switch m.activeTab {
 	case 0:
-		if m.state == Insert {
+		_, wheel := msg.(tea.MouseWheelMsg)
+		if m.state == Insert && !wheel {
 			m.textarea, textareaCmd = m.textarea.Update(msg)
 		} else {
 			m.viewport, viewportCmd = m.viewport.Update(msg)
-		}
-		if m.loading {
-			spinnerCmd = m.spinner.Tick
 		}
 	case 1:
 		m.explore, listCmd = m.explore.Update(msg)
@@ -105,7 +102,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	cmds = append(cmds, textareaCmd, viewportCmd, spinnerCmd, listCmd)
+	cmds = append(cmds, textareaCmd, viewportCmd, listCmd)
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -116,17 +113,19 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport = viewport.New(viewport.WithWidth(msg.Width), viewport.WithHeight(1))
 			m.viewport.Style = m.theme.ViewportStyleNormal
 			m.viewport.SetContent(`Welcome to vyai - cli interface for AI!`)
-			m.viewport.MouseWheelEnabled = false
+			m.viewport.MouseWheelEnabled = true
 			m.ready = true
 		} else {
 			m.viewport.SetWidth(msg.Width)
 		}
-		m.resizeViewport()
-
 		m.textarea.SetWidth(msg.Width)
-		if len(m.messages) > 0 {
+		m.resizeViewport()
+		if m.streaming {
+			m.streamHistory = m.formatViewport(strings.Join(m.messages, "\n"))
+			m.renderStream()
+		} else if len(m.messages) > 0 {
 			// Wraping content before setting it.
-			m.renderViewport(strings.Join(m.messages, ""))
+			m.renderViewport(strings.Join(m.messages, "\n"))
 		}
 		m.viewport.GotoBottom()
 
@@ -207,7 +206,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = Insert
 					m.textarea.Focus()
 
-					m.viewport.MouseWheelEnabled = false
+					m.viewport.MouseWheelEnabled = true
 
 					cmds = append(cmds, textarea.Blink)
 				}
@@ -216,7 +215,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				switch m.activeTab {
 				case 0:
-					m.viewport.MouseWheelEnabled = false
+					m.viewport.MouseWheelEnabled = true
 					m.state = Normal
 					m.textarea.Blur()
 				}
@@ -239,33 +238,28 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.partialResponse = msg.firstToken
 		m.streamTokens = msg.tokens
 		m.streamErr = msg.errCh
-		if len(m.messages) > 0 {
-			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + m.partialResponse)
-		} else {
-			m.renderViewport(m.partialResponse)
-		}
-		m.viewport.GotoBottom()
+		m.streamHistory = m.formatViewport(strings.Join(m.messages, "\n"))
+		m.renderStream()
 		return m, pollStreamCmd(m)
 	case streamMsg:
 		m.partialResponse += string(msg)
-		if len(m.messages) > 0 {
-			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + m.partialResponse)
-		} else {
-			m.renderViewport(m.partialResponse)
-		}
-		m.viewport.GotoBottom()
+		m.renderStream()
 		return m, pollStreamCmd(m)
 	case streamEndMsg:
+		follow := m.viewport.AtBottom()
 		if m.partialResponse != "" {
 			rendered := renderMarkdown(m.partialResponse, m.width)
 			wrapped := renderAssistantMessage(strings.TrimSpace(rendered), false)
 			m.messages = append(m.messages, wrapped)
 			m.renderViewport(strings.Join(m.messages, "\n"))
-			m.viewport.GotoBottom()
+			if follow {
+				m.viewport.GotoBottom()
+			}
 		}
 		m.streaming = false
 		m.loading = false
 		m.partialResponse = ""
+		m.streamHistory = ""
 		m.streamTokens = nil
 		m.streamErr = nil
 		m.notice = ""
@@ -273,6 +267,9 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinnerIndex = rand.IntN(len(spinners) - 1)
 		m.resetSpinner()
 	case spinner.TickMsg:
+		if !m.loading || m.streaming {
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 
@@ -294,6 +291,7 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case serviceNoticeMsg:
 		m.notice = string(msg)
+		m.resizeViewport()
 		cmds = append(cmds, WaitForServiceNoticeCmd(m.gsService))
 	case editorMsg:
 		if msg.renameConversationID != "" {
@@ -352,11 +350,11 @@ func (m *UIModel) resizeViewport() {
 	}
 	headerH := lipgloss.Height(m.headerView())
 	footerH := lipgloss.Height(m.footerView())
-	nonViewport := headerH + 3 + footerH // header + input + footer
+	nonViewport := headerH + lipgloss.Height(m.inputView()) + footerH
 	if m.notice != "" {
-		nonViewport++ // notice text line (the "\n" prefix in noticeView is just a separator, not an extra line)
+		nonViewport += lipgloss.Height(m.noticeView()) - 1
 	}
-	m.viewport.SetHeight(m.height - nonViewport)
+	m.viewport.SetHeight(max(1, m.height-nonViewport))
 }
 func (m *UIModel) refreshExploreList() {
 	items, err := m.gsService.GetAllConversations()

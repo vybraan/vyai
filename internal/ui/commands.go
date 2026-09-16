@@ -201,9 +201,9 @@ func (m UIModel) handleKeyEnter() (UIModel, tea.Cmd) {
 
 			m.loading = true
 			if strings.HasPrefix(strings.TrimSpace(prompt), "/agent") {
-				return m, sendAgentCmd(m, prompt)
+				return m, tea.Batch(m.spinner.Tick, sendAgentCmd(m, prompt))
 			}
-			return m, sendMessageCmd(m, prompt)
+			return m, tea.Batch(m.spinner.Tick, sendMessageCmd(m, prompt))
 		}
 	case 1:
 		i, ok := m.explore.SelectedItem().(conversationListItem)
@@ -359,7 +359,21 @@ func pollStreamCmd(m UIModel) tea.Cmd {
 					return streamEndMsg{}
 				}
 			}
-			return streamMsg(token)
+			// Drain queued chunks without delaying the first available text.
+			var batch strings.Builder
+			batch.WriteString(token)
+			for i := 0; i < 64; i++ {
+				select {
+				case next, open := <-m.streamTokens:
+					if !open {
+						return streamMsg(batch.String())
+					}
+					batch.WriteString(next)
+				default:
+					return streamMsg(batch.String())
+				}
+			}
+			return streamMsg(batch.String())
 		case err := <-m.streamErr:
 			return noticeMsg{text: "Request failed: " + summarizeUserError(err), stopLoading: true}
 		}
@@ -388,7 +402,6 @@ func sendAgentCmd(m UIModel, prompt string) tea.Cmd {
 func (m UIModel) Init() tea.Cmd {
 	return tea.Batch(
 		tea.EnterAltScreen,
-		tea.EnableMouseAllMotion,
 		tea.EnableMouseCellMotion,
 		textarea.Blink,
 		WaitForDescriptionUpdateCmd(m.gsService),
@@ -404,12 +417,28 @@ func (m *UIModel) resetSpinner() {
 }
 
 func (m *UIModel) renderViewport(content string) {
-	m.viewport.SetContent(m.theme.DocStyle.Width(m.viewport.Width()).Render(content))
+	m.viewport.SetContent(m.formatViewport(content))
+}
+
+func (m UIModel) formatViewport(content string) string {
+	return m.theme.DocStyle.Width(max(1, m.viewport.Width()-m.theme.DocStyle.GetHorizontalMargins())).Render(content)
+}
+
+func (m *UIModel) renderStream() {
+	follow := m.viewport.AtBottom()
+	content := m.formatViewport(renderAssistantMessage(m.partialResponse, false))
+	if len(m.messages) > 0 {
+		content = m.streamHistory + "\n" + content
+	}
+	m.viewport.SetContent(content)
+	if follow {
+		m.viewport.GotoBottom()
+	}
 }
 func renderMarkdown(s string, width int) string {
 	out, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width), // defaults to 80 - need to expand
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(max(1, width-6)),
 	)
 	if err != nil {
 		return strings.TrimSpace(s)
@@ -427,7 +456,7 @@ func (m *UIModel) resetState() {
 	m.state = Normal
 	m.textarea.Reset()
 	m.viewport.GotoBottom()
-	m.viewport.MouseWheelEnabled = false
+	m.viewport.MouseWheelEnabled = true
 }
 
 func WaitForDescriptionUpdateCmd(gsService *gemini.GeminiService) tea.Cmd {

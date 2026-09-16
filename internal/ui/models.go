@@ -14,15 +14,15 @@ type (
 		text        string
 		stopLoading bool
 	}
-	statusMsg string
+	statusMsg      string
 	streamStartMsg struct {
 		tokens     chan string
 		errCh      chan error
 		firstToken string
 	}
-	streamMsg   string
+	streamMsg    string
 	streamEndMsg struct{}
-	editorMsg struct {
+	editorMsg    struct {
 		path                 string
 		reloadConfig         bool
 		renameConversationID string
@@ -73,6 +73,7 @@ type UIModel struct {
 	loading         bool
 	streaming       bool
 	partialResponse string
+	streamHistory   string
 	streamTokens    chan string
 	streamErr       chan error
 	notice          string

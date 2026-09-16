@@ -67,13 +67,10 @@ func (m UIModel) settingsView() string {
 }
 
 func (m UIModel) inputView() string {
-	if !m.loading {
+	if !m.loading || m.streaming {
 		return m.textarea.View()
 	}
-	if m.streaming && m.partialResponse != "" {
-		return "\n\n" // 2 blank lines + gap's \n = 3 lines total, matches textarea
-	}
-	return m.spinner.View() + " Thinking...\n\n" // 3 lines total (matches textarea height)
+	return lipgloss.NewStyle().Height(lipgloss.Height(m.textarea.View())).Render(m.spinner.View() + " Thinking...")
 }
 
 func (m UIModel) headerView() string {
@@ -107,7 +104,7 @@ func (m UIModel) headerView() string {
 	for _, tab := range renderedTabs {
 		placeholderWidth += w(tab)
 	}
-	placeholder := m.theme.StatusBar.Width(m.viewport.Width() - w(statusKey) - placeholderWidth).Render("")
+	placeholder := m.theme.StatusBar.Width(max(0, m.width-w(statusKey)-placeholderWidth)).Render("")
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top,
 		statusKey,
@@ -115,7 +112,7 @@ func (m UIModel) headerView() string {
 		placeholder,
 	)
 
-	return bar
+	return lipgloss.NewStyle().MaxWidth(m.width).MaxHeight(1).Render(bar)
 }
 
 func (m UIModel) footerView() string {
@@ -140,7 +137,9 @@ func (m UIModel) footerView() string {
 	}
 
 	modelVal := m.theme.BottomModelTxt.
-		Width(m.viewport.Width() - w(modelKey) - w(status) - w(encoding) - w(viewPortPercent)).
+		Width(max(1, m.width-w(modelKey)-w(status)-w(encoding)-w(viewPortPercent))).
+		MaxWidth(max(1, m.width-w(modelKey)-w(status)-w(encoding)-w(viewPortPercent))).
+		MaxHeight(1).
 		Render(m.gsService.Config().ChatModel)
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top,
@@ -151,7 +150,7 @@ func (m UIModel) footerView() string {
 		viewPortPercent,
 	)
 
-	return bar
+	return lipgloss.NewStyle().MaxWidth(m.width).MaxHeight(1).Render(bar)
 }
 
 func (m UIModel) noticeView() string {
@@ -160,6 +159,7 @@ func (m UIModel) noticeView() string {
 	}
 
 	return "\n" + lipgloss.NewStyle().
+		Width(max(1, m.width)).
 		Foreground(lipgloss.Color("#F5E6A7")).
 		Background(lipgloss.Color("#5C3B00")).
 		Padding(0, 1).
