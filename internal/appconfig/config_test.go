@@ -74,3 +74,26 @@ func TestLoadReadsPromptFilesAndModels(t *testing.T) {
 		t.Fatalf("unexpected data dir: %s", cfg.DataDir)
 	}
 }
+
+func TestLoadUpgradesLegacyPrompts(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, prompt := range map[string]string{
+		cfg.SystemPromptFile:      legacySystemPrompt,
+		cfg.DescriptionPromptFile: legacyDescriptionPrompt,
+	} {
+		if err := os.WriteFile(path, []byte(prompt), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SystemPrompt != defaultSystemPrompt || cfg.DescriptionPrompt != defaultDescriptionPrompt {
+		t.Fatal("legacy prompts were not upgraded")
+	}
+}
