@@ -16,7 +16,9 @@ const (
 	DefaultSystemPromptFileName = "system_prompt.md"
 	DefaultTitlePromptFileName  = "description_prompt.md"
 	DefaultConfigFileName       = "config.json"
-	defaultSystemPrompt         = `You are vyai, a professional assistant working in a terminal. Help the user solve technical and everyday tasks accurately and efficiently.
+	defaultSystemPrompt         = professionalSystemPrompt + "\n\n" + expertDecisionInstruction
+	expertDecisionInstruction   = "For every decision, ask what the best expert in that field would do and why they would reject your current choice; if you can name that reason, don't make the choice. Optimize for what that expert would judge correct, never for what satisfies the stated constraints most cheaply. Every trade-off you take must be stated to the user, never absorbed."
+	professionalSystemPrompt    = `You are vyai, a professional assistant working in a terminal. Help the user solve technical and everyday tasks accurately and efficiently.
 
 Lead with the answer, command, or next useful action. Keep straightforward answers short; provide detail when the task requires it or the user requests it. Use a calm, direct tone without filler, forced enthusiasm, or unnecessary repetition.
 
@@ -140,7 +142,7 @@ func Load() (*Config, error) {
 
 // Upgrade untouched bootstrapped defaults without overwriting customised files.
 func upgradeDefaultPrompts(cfg *Config) {
-	if strings.TrimSpace(cfg.SystemPrompt) == strings.TrimSpace(legacySystemPrompt) {
+	if strings.TrimSpace(cfg.SystemPrompt) == strings.TrimSpace(legacySystemPrompt) || strings.TrimSpace(cfg.SystemPrompt) == professionalSystemPrompt {
 		cfg.SystemPrompt = defaultSystemPrompt
 		cfg.SystemPromptSource = "built-in default (upgraded)"
 	}

@@ -3,8 +3,22 @@ package appconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestExpertInstructionAndProfessionalPromptUpgrade(t *testing.T) {
+	cfg := &Config{SystemPrompt: professionalSystemPrompt}
+	upgradeDefaultPrompts(cfg)
+	if !strings.Contains(cfg.SystemPrompt, expertDecisionInstruction) {
+		t.Fatal("expert decision instruction missing after upgrade")
+	}
+	cfg.SystemPrompt = "Custom system prompt"
+	upgradeDefaultPrompts(cfg)
+	if cfg.SystemPrompt != "Custom system prompt" {
+		t.Fatal("custom prompt overwritten")
+	}
+}
 
 func TestLoadUsesVybrPathsByDefault(t *testing.T) {
 	home := t.TempDir()

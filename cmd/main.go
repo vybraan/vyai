@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -32,6 +33,13 @@ func main() {
 	if err := gsService.LoadStoredConversations(); err != nil {
 		log.Fatal(err)
 	}
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		gsService.RunTitleWorker(workerCtx)
+	}()
+	defer func() { stopWorker(); <-workerDone }()
 
 	workspace, err := os.Getwd()
 	if err != nil {

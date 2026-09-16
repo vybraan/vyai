@@ -387,7 +387,13 @@ func sendAgentCmd(m UIModel, prompt string) tea.Cmd {
 			return noticeMsg{text: "Agent runner is not configured.", stopLoading: true}
 		}
 
-		output, err := m.agentRunner.Run(context.Background(), agent.RunRequest{
+		ctx := context.Background()
+		release, err := m.gsService.BeginForeground(ctx)
+		if err != nil {
+			return noticeMsg{text: "Agent request failed: " + summarizeUserError(err), stopLoading: true}
+		}
+		defer release()
+		output, err := m.agentRunner.Run(ctx, agent.RunRequest{
 			Input: userInput,
 			Model: m.gsService.Config().ChatModel,
 		})

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/appconfig"
@@ -35,6 +37,13 @@ type GeminiService struct {
 	store              *FileConversationStore
 	descriptionUpdates chan DescriptionUpdate
 	notices            chan Notice
+	titleMu            sync.Mutex
+	saveMu             sync.Mutex
+	foreground         int
+	idleSince          time.Time
+	titleCancel        context.CancelFunc
+	titleDone          chan struct{}
+	generateTitle      func(context.Context, string, string) (string, error)
 }
 
 func NewGeminiService(cm *ConversationManager, cfg *appconfig.Config) *GeminiService {
@@ -44,46 +53,9 @@ func NewGeminiService(cm *ConversationManager, cfg *appconfig.Config) *GeminiSer
 		store:              NewFileConversationStore(cfg.DataDir),
 		descriptionUpdates: make(chan DescriptionUpdate, 8),
 		notices:            make(chan Notice, 8),
+		generateTitle:      utils.GenerateEphemeralMessage,
+		idleSince:          time.Now(),
 	}
-}
-
-func (gs *GeminiService) SetConversationDescription(c context.Context, lock_description bool) error {
-	// Only generate a description if it's the placeholder and not locked
-	if gs.cm.active != nil && gs.cm.active.GetDescription() == "New Conversation..." && !gs.cm.active.IsDescriptionLocked() {
-		messages, err := gs.cm.active.Repo.GetMessages()
-		if err != nil {
-			if errors.Is(err, ErrNoMessagesInHistory) {
-				return nil // No messages yet, expected during initialization
-			}
-			return err
-		}
-
-		conv := gs.cm.active
-		go func() {
-			defer func() { recover() }()
-			desc, err := utils.GenerateEphemeralMessage(c, gs.cfg.DescriptionModel, buildDescriptionPrompt(messages)+"\n\n"+gs.cfg.DescriptionPrompt)
-			if err != nil {
-				notice := summarizeGeminiError("Conversation title was not updated", err)
-				gs.publishNotice(notice)
-				return
-			}
-			desc = strings.TrimSpace(desc)
-			if desc == "" {
-				return
-			}
-
-			conv.SetDescription(desc)
-			gs.persistConversation(conv)
-
-			select {
-			case gs.descriptionUpdates <- DescriptionUpdate{ID: conv.ID, Description: desc}:
-			case <-c.Done():
-				return
-			}
-		}()
-		gs.cm.active.SetDescriptionLocked(lock_description)
-	}
-	return nil
 }
 
 func (gs *GeminiService) ClearConversation(c context.Context) error {
@@ -102,11 +74,6 @@ func (gs *GeminiService) ClearConversation(c context.Context) error {
 
 func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, error) {
 
-	// Ensure the old conversation has a description before the switch
-	if err := gs.SetConversationDescription(c, true); err != nil {
-		return nil, err
-	}
-
 	if gs.cm.active != nil {
 		gs.cm.active.Close()
 	}
@@ -123,6 +90,11 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 }
 
 func (gs *GeminiService) SendMessage(c context.Context, message string) (string, error) {
+	release, err := gs.BeginForeground(c)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 
 	conversation, err := gs.cm.GetActiveConversation()
 	if err != nil {
@@ -132,6 +104,7 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 		}
 	}
 
+	gs.queueTitle(conversation, []Message{{Role: "user", Text: message}})
 	result, err := conversation.Repo.SendMessage(c, genai.Text(message))
 
 	if err != nil {
@@ -139,14 +112,15 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 	}
 	conversation.Touch()
 
-	if conversation.GetDescription() == "New Conversation..." {
-		gs.SetConversationDescription(c, false)
-	}
-
 	return result, nil
 }
 
 func (gs *GeminiService) SendMessageStream(c context.Context, message string, onToken func(string)) (string, error) {
+	release, err := gs.BeginForeground(c)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	conversation, err := gs.cm.GetActiveConversation()
 	if err != nil {
 		conversation, err = gs.NewConversation(c)
@@ -155,15 +129,12 @@ func (gs *GeminiService) SendMessageStream(c context.Context, message string, on
 		}
 	}
 
+	gs.queueTitle(conversation, []Message{{Role: "user", Text: message}})
 	result, err := conversation.Repo.SendMessageStream(c, genai.Text(message), onToken)
 	if err != nil {
 		return "", err
 	}
 	conversation.Touch()
-
-	if conversation.GetDescription() == "New Conversation..." {
-		gs.SetConversationDescription(c, false)
-	}
 
 	return result, nil
 }
@@ -188,11 +159,6 @@ func (gs *GeminiService) GetAllConversations() ([]ConversationSummary, error) {
 }
 
 func (gs *GeminiService) SwitchConversation(c context.Context, id string) error {
-
-	// Ensure the old conversation has a description before the switch and then lock it
-	if err := gs.SetConversationDescription(c, true); err != nil {
-		return err
-	}
 
 	if gs.cm.active != nil {
 		gs.cm.active.Close()
@@ -231,6 +197,8 @@ func (gs *GeminiService) SettingsMarkdown() string {
 }
 
 func (gs *GeminiService) ReloadConfig() error {
+	gs.titleMu.Lock()
+	defer gs.titleMu.Unlock()
 	oldCfg := gs.cfg
 
 	cfg, err := appconfig.Load()
@@ -239,11 +207,15 @@ func (gs *GeminiService) ReloadConfig() error {
 	}
 
 	gs.cfg = cfg
+	gs.saveMu.Lock()
 	gs.store = NewFileConversationStore(cfg.DataDir)
+	gs.saveMu.Unlock()
 	for _, conv := range gs.cm.All() {
+		conv.mu.Lock()
 		if conv.ChatModel == oldCfg.ChatModel {
 			conv.ChatModel = cfg.ChatModel
 		}
+		conv.mu.Unlock()
 		conv.Repo.ResetSession()
 		gs.persistConversation(conv)
 	}
@@ -275,13 +247,26 @@ func (gs *GeminiService) LoadStoredConversations() error {
 			gs.persistConversation(conv)
 		}
 		gs.cm.AddConversation(conv)
+		gs.queueTitle(conv, record.Messages)
 	}
 
 	return nil
 }
 
 func (gs *GeminiService) persistConversation(conv *Conversation) {
+	gs.saveMu.Lock()
+	defer gs.saveMu.Unlock()
+	gs.saveConversation(conv)
+}
+
+func (gs *GeminiService) saveConversation(conv *Conversation) {
 	if conv == nil || conv.Repo == nil {
+		return
+	}
+	gs.cm.mu.RLock()
+	exists := gs.cm.conversations[conv.ID] == conv
+	gs.cm.mu.RUnlock()
+	if !exists {
 		return
 	}
 
@@ -290,16 +275,21 @@ func (gs *GeminiService) persistConversation(conv *Conversation) {
 		return
 	}
 
+	conv.mu.RLock()
 	record := ConversationRecord{
 		ID:                conv.ID,
-		Description:       conv.GetDescription(),
-		DescriptionLocked: conv.IsDescriptionLocked(),
+		Description:       conv.description,
+		DescriptionLocked: conv.descriptionLocked,
 		CreatedAt:         conv.CreatedAt,
-		UpdatedAt:         conv.UpdatedAtSnapshot(),
+		UpdatedAt:         conv.UpdatedAt,
 		ChatModel:         conv.ChatModel,
 		Messages:          messages,
+		Title:             conv.title,
 	}
-	gs.store.Save(record)
+	conv.mu.RUnlock()
+	if err := gs.store.Save(record); err != nil {
+		gs.publishNotice("Conversation could not be saved: " + err.Error())
+	}
 }
 
 func (gs *GeminiService) RenameConversation(id string, description string) error {
@@ -319,8 +309,12 @@ func (gs *GeminiService) RenameConversation(id string, description string) error
 		return fmt.Errorf("conversation with ID %s does not exist", id)
 	}
 
-	target.SetDescription(description)
-	target.SetDescriptionLocked(true)
+	target.mu.Lock()
+	target.description = description
+	target.descriptionLocked = true
+	target.title = TitleState{Manual: true}
+	target.UpdatedAt = time.Now().UTC()
+	target.mu.Unlock()
 	gs.persistConversation(target)
 	return nil
 }
@@ -333,8 +327,13 @@ func (gs *GeminiService) SetChatModel(model string) error {
 		return err
 	}
 	for _, conv := range gs.cm.All() {
-		if conv.ChatModel == old || conv.ChatModel == "" {
+		conv.mu.Lock()
+		changed := conv.ChatModel == old || conv.ChatModel == ""
+		if changed {
 			conv.ChatModel = model
+		}
+		conv.mu.Unlock()
+		if changed {
 			conv.Repo.ResetSession()
 			gs.persistConversation(conv)
 		}
@@ -343,6 +342,8 @@ func (gs *GeminiService) SetChatModel(model string) error {
 }
 
 func (gs *GeminiService) SetDescriptionModel(model string) error {
+	gs.titleMu.Lock()
+	defer gs.titleMu.Unlock()
 	gs.cfg.DescriptionModel = model
 	return gs.persistConfig()
 }
@@ -370,6 +371,8 @@ func (gs *GeminiService) persistConfig() error {
 }
 
 func (gs *GeminiService) DeleteConversation(id string) error {
+	gs.saveMu.Lock()
+	defer gs.saveMu.Unlock()
 	conversation, err := gs.cm.RemoveConversation(id)
 	if err != nil {
 		return err

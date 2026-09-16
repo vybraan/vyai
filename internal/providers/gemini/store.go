@@ -11,13 +11,14 @@ import (
 )
 
 type ConversationRecord struct {
-	ID                string    `json:"id"`
-	Description       string    `json:"description"`
-	DescriptionLocked bool      `json:"description_locked"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	ChatModel         string    `json:"chat_model"`
-	Messages          []Message `json:"messages"`
+	ID                string     `json:"id"`
+	Description       string     `json:"description"`
+	DescriptionLocked bool       `json:"description_locked"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	ChatModel         string     `json:"chat_model"`
+	Messages          []Message  `json:"messages"`
+	Title             TitleState `json:"title_state,omitempty"`
 }
 
 type FileConversationStore struct {

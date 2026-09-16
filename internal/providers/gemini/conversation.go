@@ -18,6 +18,7 @@ type Conversation struct {
 	ChatModel         string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	title             TitleState
 
 	mu sync.RWMutex
 }
@@ -65,6 +66,7 @@ func NewConversationFromRecord(repo HistoryRepository, record ConversationRecord
 		ChatModel:         record.ChatModel,
 		CreatedAt:         createdAt,
 		UpdatedAt:         updatedAt,
+		title:             record.Title,
 	}
 }
 
