@@ -168,12 +168,13 @@ func (mhr *MemoryHistoryRepository) SendMessageStream(c context.Context, text ge
 			if cand.Content != nil {
 				for _, part := range cand.Content.Parts {
 					if t, ok := part.(genai.Text); ok {
-						fullResponse.WriteString(string(t))
+						chunk := string(t)
+						fullResponse.WriteString(chunk)
+						onToken(chunk)
 					}
 				}
 			}
 		}
-		onToken(fullResponse.String())
 	}
 
 	mhr.mu.Lock()

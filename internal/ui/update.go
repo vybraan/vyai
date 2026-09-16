@@ -239,21 +239,19 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.partialResponse = msg.firstToken
 		m.streamTokens = msg.tokens
 		m.streamErr = msg.errCh
-		rendered := renderMarkdown(msg.firstToken, m.width)
 		if len(m.messages) > 0 {
-			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + rendered)
+			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + m.partialResponse)
 		} else {
-			m.renderViewport(rendered)
+			m.renderViewport(m.partialResponse)
 		}
 		m.viewport.GotoBottom()
 		return m, pollStreamCmd(m)
 	case streamMsg:
-		m.partialResponse = string(msg)
-		rendered := renderMarkdown(string(msg), m.width)
+		m.partialResponse += string(msg)
 		if len(m.messages) > 0 {
-			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + rendered)
+			m.renderViewport(strings.Join(m.messages, "\n") + "\n" + m.partialResponse)
 		} else {
-			m.renderViewport(rendered)
+			m.renderViewport(m.partialResponse)
 		}
 		m.viewport.GotoBottom()
 		return m, pollStreamCmd(m)
