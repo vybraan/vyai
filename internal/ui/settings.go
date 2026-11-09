@@ -13,11 +13,11 @@ const (
 )
 
 type settingsItem struct {
-	title       string
-	desc        string
-	path        string
-	itemType    settingsItemType
-	currentVal  string
+	title      string
+	desc       string
+	path       string
+	itemType   settingsItemType
+	currentVal string
 }
 
 func newSettingsItem(title, description, path string, itemType settingsItemType, currentVal string) settingsItem {
