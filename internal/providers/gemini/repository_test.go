@@ -1,26 +1,30 @@
 package gemini
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/google/generative-ai-go/genai"
-)
+func TestMessageHistoryRoundTrip(t *testing.T) {
+	want := []Message{
+		{Role: "user", Text: "hello"},
+		{Role: "model", Text: "world"},
+	}
+	got := messagesFromHistory(historyFromMessages(want))
+	if len(got) != len(want) {
+		t.Fatalf("expected %d messages, got %d", len(want), len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("message %d: got %#v, want %#v", i, got[i], want[i])
+		}
+	}
+}
 
 func TestMemoryHistoryRepositoryGetMessagesReturnsTypedMessages(t *testing.T) {
 	t.Parallel()
 
-	repo := NewMemoryHistoryRepository(&genai.ChatSession{
-		History: []*genai.Content{
-			{
-				Role:  "user",
-				Parts: []genai.Part{genai.Text("hello")},
-			},
-			{
-				Role:  "model",
-				Parts: []genai.Part{genai.Text("world")},
-			},
-		},
-	})
+	repo := NewPersistentHistoryRepository([]Message{
+		{Role: "user", Text: "hello"},
+		{Role: "model", Text: "world"},
+	}, nil, nil)
 
 	messages, err := repo.GetMessages()
 	if err != nil {
@@ -61,8 +65,6 @@ func TestMemoryHistoryRepositoryResetSessionPreservesMessages(t *testing.T) {
 		{Role: "user", Text: "hello"},
 		{Role: "model", Text: "world"},
 	}, nil, nil)
-	repo.chatSession = &genai.ChatSession{}
-
 	repo.ResetSession()
 
 	if repo.chatSession != nil {

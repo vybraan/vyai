@@ -7,9 +7,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/list"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/appconfig"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 func ConvertToItemList(items []Item) []list.Item {
@@ -27,18 +26,11 @@ func GenerateEphemeralMessage(c context.Context, modelName string, message strin
 		return "", fmt.Errorf("GOOGLE_API_KEY environment variable is not set")
 	}
 
-	client, err := genai.NewClient(c, option.WithAPIKey(apiKey))
+	client, err := genai.NewClient(c, &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI})
 	if err != nil {
 		return "", err
 	}
-	defer client.Close()
-
-	model := client.GenerativeModel(modelName)
-	if model == nil {
-		return "", fmt.Errorf("failed to get generative model")
-	}
-
-	result, err := model.GenerateContent(c, genai.Text(message))
+	result, err := client.Models.GenerateContent(c, modelName, genai.Text(message), nil)
 	if err != nil {
 		return "", err
 	}
@@ -75,18 +67,7 @@ func responseText(resp *genai.GenerateContentResponse) (string, error) {
 		return "", fmt.Errorf("model returned no candidates")
 	}
 
-	var builder strings.Builder
-	candidate := resp.Candidates[0]
-	if candidate.Content == nil {
-		return "", fmt.Errorf("model returned empty content")
-	}
-	for _, part := range candidate.Content.Parts {
-		if text, ok := part.(genai.Text); ok {
-			builder.WriteString(string(text))
-		}
-	}
-
-	text := strings.TrimSpace(builder.String())
+	text := strings.TrimSpace(resp.Text())
 	if text == "" {
 		return "", fmt.Errorf("model returned no text content")
 	}

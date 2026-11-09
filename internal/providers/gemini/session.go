@@ -6,44 +6,36 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/appconfig"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 // NewChatSession initializes a new ChatSession with proper error handling.
-func NewChatSession(c context.Context, modelID string, cfg *appconfig.Config) (*genai.Client, *genai.ChatSession, error) {
+func NewChatSession(c context.Context, modelID string, cfg *appconfig.Config, history []Message) (*genai.Chat, error) {
 	if cfg == nil {
-		return nil, nil, fmt.Errorf("config is required")
+		return nil, fmt.Errorf("config is required")
 	}
 
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	if apiKey == "" {
-		return nil, nil, fmt.Errorf("GOOGLE_API_KEY environment variable is not set")
+		return nil, fmt.Errorf("GOOGLE_API_KEY environment variable is not set")
 	}
 
-	client, err := genai.NewClient(c, option.WithAPIKey(apiKey))
+	client, err := genai.NewClient(c, &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create client: %v", err)
+		return nil, fmt.Errorf("create Gemini client: %w", err)
 	}
 
-	model := client.GenerativeModel(modelID)
-	if model == nil {
-		_ = client.Close()
-		return nil, nil, fmt.Errorf("failed to get generative model: %s", modelID)
-	}
-
+	var config *genai.GenerateContentConfig
 	if strings.TrimSpace(cfg.SystemPrompt) != "" {
-		model.SystemInstruction = &genai.Content{
-			Parts: []genai.Part{genai.Text(cfg.SystemPrompt)},
+		config = &genai.GenerateContentConfig{
+			SystemInstruction: genai.NewContentFromText(cfg.SystemPrompt, genai.RoleUser),
 		}
 	}
 
-	cs := model.StartChat()
-	if cs == nil {
-		_ = client.Close()
-		return nil, nil, fmt.Errorf("failed to start chat session")
+	chat, err := client.Chats.Create(c, modelID, config, historyFromMessages(history))
+	if err != nil {
+		return nil, fmt.Errorf("create chat session: %w", err)
 	}
-
-	return client, cs, nil
+	return chat, nil
 }

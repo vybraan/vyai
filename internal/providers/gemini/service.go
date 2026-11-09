@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
 	"github.com/vybraan/vyai/internal/appconfig"
 	"github.com/vybraan/vyai/internal/utils"
+	"google.golang.org/genai"
 )
 
 type DescriptionUpdate struct {
@@ -79,8 +79,8 @@ func (gs *GeminiService) NewConversation(c context.Context) (*Conversation, erro
 	}
 
 	conversation := gs.cm.StartNewConversationWithModel(nil, gs.cfg.ChatModel)
-	memRepo := NewPersistentHistoryRepository(nil, func(ctx context.Context) (interface{ Close() error }, *genai.ChatSession, error) {
-		return NewChatSession(ctx, gs.cfg.ChatModel, gs.cfg)
+	memRepo := NewPersistentHistoryRepository(nil, func(ctx context.Context, history []Message) (*genai.Chat, error) {
+		return NewChatSession(ctx, gs.cfg.ChatModel, gs.cfg, history)
 	}, func(_ []Message) {
 		conversation.Touch()
 		gs.persistConversation(conversation)
@@ -105,7 +105,7 @@ func (gs *GeminiService) SendMessage(c context.Context, message string) (string,
 	}
 
 	gs.queueTitle(conversation, []Message{{Role: "user", Text: message}})
-	result, err := conversation.Repo.SendMessage(c, genai.Text(message))
+	result, err := conversation.Repo.SendMessage(c, message)
 
 	if err != nil {
 		return "", err
@@ -130,7 +130,7 @@ func (gs *GeminiService) SendMessageStream(c context.Context, message string, on
 	}
 
 	gs.queueTitle(conversation, []Message{{Role: "user", Text: message}})
-	result, err := conversation.Repo.SendMessageStream(c, genai.Text(message), onToken)
+	result, err := conversation.Repo.SendMessageStream(c, message, onToken)
 	if err != nil {
 		return "", err
 	}
@@ -234,12 +234,12 @@ func (gs *GeminiService) LoadStoredConversations() error {
 			record.ChatModel = gs.cfg.ChatModel
 		}
 		var conv *Conversation
-		repo := NewPersistentHistoryRepository(record.Messages, func(ctx context.Context) (interface{ Close() error }, *genai.ChatSession, error) {
+		repo := NewPersistentHistoryRepository(record.Messages, func(ctx context.Context, history []Message) (*genai.Chat, error) {
 			modelID := record.ChatModel
 			if conv != nil && conv.ChatModel != "" {
 				modelID = conv.ChatModel
 			}
-			return NewChatSession(ctx, modelID, gs.cfg)
+			return NewChatSession(ctx, modelID, gs.cfg, history)
 		}, nil)
 		conv = NewConversationFromRecord(repo, record)
 		repo.onChange = func(_ []Message) {
